@@ -11,13 +11,14 @@ import { Platform } from 'react-native';
 import type { TFunction } from 'i18next';
 import type {
   HostRuntimeState,
+  RuntimeAgentStatusTransition,
   RuntimeDiagnostic,
+  RuntimeHostLatencyMeasurement,
 } from 'react-native-whip-ssh';
 
 import type { AppNavigationController } from './useAppNavigation';
 import type { HostManagementController } from './useHostManagement';
 import type { useApplicationSecurity } from './useApplicationSecurity';
-import type { ReconnectRecoveryTrigger } from './useLiveHostMonitoring';
 import type { useTerminalSessions } from './useTerminalSessions';
 import type {
   ConnectOptions,
@@ -25,13 +26,8 @@ import type {
   SessionRuntimeStore,
 } from './sessionRuntimeTypes';
 import {
-  applyNativeHostState,
   canRefreshLiveHostSession,
-  closeLiveHostSession,
   findLiveHostSession,
-  openLiveHostSession,
-  selectLiveHostSession,
-  updateLiveHostConnection,
 } from '../liveHostSessions';
 import { requiresBiometricForKeyUse } from '../lib/biometricSecurity';
 import {
@@ -41,19 +37,14 @@ import {
 } from '../lib/connectionErrors';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { isHerdrProtocolMismatch } from '../lib/herdrProtocol';
-import { shouldRefreshLiveHost } from '../lib/liveHostHeartbeat';
 import {
   destroyRuntime,
   disposeRuntimeMap,
   savedHostConnectionAction,
-  shouldRestartLiveSession,
   shouldRetainBackgroundRuntimes,
   waitForRuntimeDestruction,
 } from '../lib/sessionRuntimePolicy';
-import {
-  bestEffortCleanup,
-  reportBackgroundFailure,
-} from '../services/backgroundOperations';
+import { bestEffortCleanup } from '../services/backgroundOperations';
 import { HerdrClient } from '../services/HerdrClient';
 import {
   networkErrorKind,
@@ -67,9 +58,7 @@ import {
 } from '../services/performanceTrace';
 import { hostKeyErrorHost, parseUnknownHostKey } from '../services/knownHosts';
 import { loadJumpHostConnectionProfiles } from '../services/hostProfiles';
-import { terminalSessionStatusFromNative } from '../terminalSessions';
 import type {
-  AgentStatus,
   ConnectionProfile,
   HerdrSnapshot,
   HostProfile,
@@ -89,8 +78,10 @@ function withOptionalAppPerformanceTrace<Result>(
 
 export function useSessionConnectionLifecycle({
   stateRef,
-  setState,
   runtimesRef,
+  appCoreRef,
+  sessionProfilesRef,
+  commitAppCore,
   restoredTerminalHostIdsRef,
   alertsEnabled,
   hosts,
@@ -100,6 +91,7 @@ export function useSessionConnectionLifecycle({
   clearLatency,
   handleAgentStateChange,
   handleRuntimeDiagnostic,
+  handleLatencyMeasurement,
   handleReconnectRecovered,
   t,
 }: SessionRuntimeStore & {
@@ -112,16 +104,18 @@ export function useSessionConnectionLifecycle({
   clearLatency: (sessionId: string) => void;
   handleAgentStateChange: (change: {
     sessionId: string;
-    hostState: HostRuntimeState;
     snapshot: HerdrSnapshot;
-    visibleSnapshot?: HerdrSnapshot;
-    previousStatuses: Map<string, AgentStatus> | null;
-    changedAgentPaneIds?: string[];
-  }) => Map<string, AgentStatus>;
+    transitions: RuntimeAgentStatusTransition[];
+  }) => void;
   handleRuntimeDiagnostic: (
     sessionId: string,
     runtime: LiveRuntime,
     diagnostic: RuntimeDiagnostic,
+  ) => void;
+  handleLatencyMeasurement: (
+    sessionId: string,
+    runtime: LiveRuntime,
+    measurement: RuntimeHostLatencyMeasurement,
   ) => void;
   handleReconnectRecovered: (sessionId: string, runtime: LiveRuntime) => void;
   t: TFunction;
@@ -204,12 +198,7 @@ export function useSessionConnectionLifecycle({
           'control-reconnect-protocol-mismatch',
           { sessionId, error: networkErrorMessage(cause) },
         );
-        setState(current =>
-          updateLiveHostConnection(current, sessionId, {
-            status: 'error',
-            error: String(cause),
-          }),
-        );
+        commitAppCore(appCoreRef.current.view());
         return;
       }
       recordNetworkDiagnostic('warn', 'control-recovery-requested', {
@@ -217,12 +206,6 @@ export function useSessionConnectionLifecycle({
         cause: networkErrorMessage(cause),
       });
       clearLatency(sessionId);
-      setState(current =>
-        updateLiveHostConnection(current, sessionId, {
-          status: 'reconnecting',
-          error: String(cause),
-        }),
-      );
       runtime.client.reconnectControl(runtime.profile).catch(reconnectError => {
         if (runtimesRef.current.get(sessionId) !== runtime) return;
         recordNetworkDiagnostic('warn', 'control-recovery-native-failed', {
@@ -231,7 +214,7 @@ export function useSessionConnectionLifecycle({
         });
       });
     },
-    [clearLatency, hosts, runtimesRef, setState, stateRef],
+    [appCoreRef, clearLatency, commitAppCore, hosts, runtimesRef, stateRef],
   );
 
   const createRuntime = useCallback(
@@ -239,43 +222,29 @@ export function useSessionConnectionLifecycle({
       const runtime = {
         client: new HerdrClient(),
         profile,
-        previousStatuses: null,
         latencyFailureActive: false,
         latencyDiagnosticFailureRecorded: false,
         latencyFailures: 0,
       } as LiveRuntime;
       const acceptHostState = (
         hostState: HostRuntimeState,
-        changedAgentPaneIds: string[] = [],
+        transitions: RuntimeAgentStatusTransition[] = [],
       ) => {
         if (runtimesRef.current.get(sessionId) !== runtime) return;
         const snapshot = runtime.client.snapshotFromHostState(hostState);
-        const visibleSnapshot = findLiveHostSession(
-          stateRef.current,
+        handleAgentStateChange({
           sessionId,
-        )?.snapshot;
-        runtime.previousStatuses = handleAgentStateChange({
-          sessionId,
-          hostState,
           snapshot,
-          visibleSnapshot,
-          previousStatuses: runtime.previousStatuses,
-          changedAgentPaneIds,
+          transitions,
         });
         startTransition(() => {
-          setState(current =>
-            applyNativeHostState(current, sessionId, hostState, snapshot),
-          );
-          terminals.reconcile(sessionId, snapshot.panes);
+          commitAppCore(appCoreRef.current.view());
         });
         if (
           hostState.freshness === 'fresh' ||
           hostState.freshness === 'unavailable'
         ) {
           hosts.setError(null);
-          setState(current =>
-            updateLiveHostConnection(current, sessionId, { status: 'ready' }),
-          );
         }
       };
       runtime.client.setRuntimeEventHandler(event => {
@@ -303,22 +272,12 @@ export function useSessionConnectionLifecycle({
               error: event.error,
             },
           );
-          if (event.state === 'reconnecting' || event.state === 'connecting') {
-            setState(current =>
-              updateLiveHostConnection(current, sessionId, {
-                status: 'reconnecting',
-                error: event.error,
-                reconnectAttempt: event.reconnectAttempt,
-              }),
-            );
-          } else if (event.state === 'failed') {
-            setState(current =>
-              updateLiveHostConnection(current, sessionId, {
-                status: 'error',
-                error: event.error,
-                reconnectAttempt: event.reconnectAttempt,
-              }),
-            );
+          if (
+            event.state === 'reconnecting'
+            || event.state === 'connecting'
+            || event.state === 'failed'
+          ) {
+            commitAppCore(appCoreRef.current.view());
           }
           return;
         }
@@ -341,14 +300,19 @@ export function useSessionConnectionLifecycle({
           return;
         }
         if (event.type === 'host-state') {
-          acceptHostState(event.state, event.changedAgentPaneIds);
+          acceptHostState(event.state, event.agentStatusTransitions);
+          return;
+        }
+        if (event.type === 'latency-measured') {
+          handleLatencyMeasurement(sessionId, runtime, event.measurement);
           return;
         }
         if (event.type === 'terminal-state') {
-          terminals.updateStatus(
+          terminals.updateLifecycle(
             sessionId,
             event.terminalId,
-            terminalSessionStatusFromNative(event.state, event.retrying),
+            event.state,
+            event.retrying,
             event.error,
             event.reconnectAttempt,
           );
@@ -373,26 +337,22 @@ export function useSessionConnectionLifecycle({
           return;
         }
         if (event.type === 'fatal-error') {
-          setState(current =>
-            updateLiveHostConnection(current, sessionId, {
-              status: 'error',
-              error: event.message,
-            }),
-          );
+          commitAppCore(appCoreRef.current.view());
         }
       });
       runtime.acceptHostState = acceptHostState;
       return runtime;
     },
     [
+      appCoreRef,
+      commitAppCore,
       handleAgentStateChange,
+      handleLatencyMeasurement,
       handleReconnectRecovered,
       handleRuntimeDiagnostic,
       hosts,
       runtimesRef,
       scheduleEventReconnect,
-      setState,
-      stateRef,
       terminals,
     ],
   );
@@ -410,19 +370,18 @@ export function useSessionConnectionLifecycle({
       }
       clearLatency(sessionId);
       navigation.clearSessionView(sessionId);
-      setState(current => {
-        const next = closeLiveHostSession(current, sessionId);
-        if (next.sessions.length === 0) navigation.selectTab('hosts');
-        return next;
-      });
+      const view = appCoreRef.current.closeSession(sessionId);
+      commitAppCore(view);
+      if (view.sessions.length === 0) navigation.selectTab('hosts');
       await destruction;
     },
     [
+      appCoreRef,
       clearLatency,
+      commitAppCore,
       hosts,
       navigation,
       runtimesRef,
-      setState,
       stateRef,
       terminals,
     ],
@@ -472,36 +431,6 @@ export function useSessionConnectionLifecycle({
     [refreshSnapshot],
   );
 
-  const resumeConnections = useCallback(
-    (reconcile = false) => {
-      for (const session of stateRef.current.sessions) {
-        if (
-          runtimesRef.current.has(session.id) &&
-          shouldRefreshLiveHost(session, reconcile)
-        ) {
-          reportBackgroundFailure(refresh(session.id), 'live-host-refresh');
-        }
-      }
-    },
-    [refresh, runtimesRef, stateRef],
-  );
-
-  const restartConnections = useCallback(
-    (trigger: ReconnectRecoveryTrigger) => {
-      for (const session of stateRef.current.sessions) {
-        if (!runtimesRef.current.has(session.id)) continue;
-        if (!shouldRestartLiveSession(trigger, session.status)) continue;
-        scheduleReconnect(
-          session.id,
-          trigger === 'network-change'
-            ? t('app.networkChangedReconnect')
-            : session.connectionError || t('app.resumeReconnect'),
-        );
-      }
-    },
-    [runtimesRef, scheduleReconnect, stateRef, t],
-  );
-
   const connect = useCallback(
     async (
       nextProfile: ConnectionProfile,
@@ -531,6 +460,7 @@ export function useSessionConnectionLifecycle({
       else await waitForRuntimeDestruction(nextProfile.id);
       let runtime: LiveRuntime | null = null;
       let liveSessionOpened = false;
+      let appCoreSessionPrepared = false;
       let connectionStage = 'prepare';
       recordNetworkDiagnostic('info', 'host-connect-requested', {
         sessionId: nextProfile.id,
@@ -606,29 +536,25 @@ export function useSessionConnectionLifecycle({
         connectionStage = 'initial-host-state';
         const initialState = runtime.client.native.hostState();
         const initial = runtime.client.snapshotFromHostState(initialState);
+        sessionProfilesRef.current.set(saved.host.id, saved.host);
+        appCoreRef.current.openSession(
+          sessionId,
+          saved.host.id,
+          activateSession,
+        );
+        appCoreRef.current.attachRuntime(sessionId, runtime.client.native);
+        appCoreSessionPrepared = true;
         connectionStage = 'terminal-restore';
         const restoredTerminals = await withOptionalAppPerformanceTrace(
           traceStartupRestore,
           'Whip startup restore: terminal state',
-          () => terminals.restore(sessionId, nextProfile.id, initial),
+          () => terminals.restore(sessionId, nextProfile.id),
         );
         if (restoredTerminals.activeTerminalId) {
           restoredTerminalHostIdsRef.current.add(nextProfile.id);
         }
-        runtime.previousStatuses = new Map(
-          initial.agents.map(agent => [agent.pane_id, agent.agent_status]),
-        );
         runtimesRef.current.set(sessionId, runtime);
-        setState(current => {
-          let next = openLiveHostSession(
-            current,
-            saved.host!,
-            sessionId,
-            activateSession,
-          );
-          next = updateLiveHostConnection(next, sessionId, { status: 'ready' });
-          return applyNativeHostState(next, sessionId, initialState, initial);
-        });
+        commitAppCore(appCoreRef.current.view());
         liveSessionOpened = true;
         recordNetworkDiagnostic('info', 'host-connect-ready', {
           sessionId,
@@ -659,13 +585,19 @@ export function useSessionConnectionLifecycle({
           },
         );
         hosts.setError(message);
+        if (appCoreSessionPrepared) {
+          appCoreRef.current.detachRuntime(nextProfile.id);
+        }
         if (reuseConnectingSession) {
-          setState(current =>
-            updateLiveHostConnection(current, nextProfile.id, {
-              status: 'error',
-              error: message,
-            }),
+          commitAppCore(
+            appCoreRef.current.setPlaceholderConnection(
+              nextProfile.id,
+              'error',
+              message,
+            ),
           );
+        } else if (appCoreSessionPrepared) {
+          commitAppCore(appCoreRef.current.closeSession(nextProfile.id));
         }
         if (runtime) {
           if (liveSessionOpened)
@@ -679,7 +611,9 @@ export function useSessionConnectionLifecycle({
       }
     },
     [
+      appCoreRef,
       close,
+      commitAppCore,
       createRuntime,
       hosts,
       navigation,
@@ -687,7 +621,7 @@ export function useSessionConnectionLifecycle({
       runtimesRef,
       scheduleReconnect,
       security,
-      setState,
+      sessionProfilesRef,
       stateRef,
       t,
       terminals,
@@ -698,11 +632,11 @@ export function useSessionConnectionLifecycle({
   const select = useCallback(
     (sessionId: string, tab: 'herd' | 'terminal' = 'terminal') => {
       navigation.selectPane(null);
-      setState(current => selectLiveHostSession(current, sessionId));
+      commitAppCore(appCoreRef.current.selectSession(sessionId));
       if (tab === 'terminal') navigation.showTerminal(sessionId);
       else navigation.showHerd(sessionId);
     },
-    [navigation, setState],
+    [appCoreRef, commitAppCore, navigation],
   );
 
   const connectSavedHost = useCallback(
@@ -769,8 +703,6 @@ export function useSessionConnectionLifecycle({
       refresh,
       refreshSnapshot,
       scheduleReconnect,
-      restartConnections,
-      resumeConnections,
     }),
     [
       close,
@@ -782,8 +714,6 @@ export function useSessionConnectionLifecycle({
       getState,
       refresh,
       refreshSnapshot,
-      restartConnections,
-      resumeConnections,
       scheduleReconnect,
       select,
     ],

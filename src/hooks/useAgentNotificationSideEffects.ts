@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef } from 'react';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import type { HostRuntimeState } from 'react-native-whip-ssh';
+import type { RuntimeAgentStatusTransition } from 'react-native-whip-ssh';
 
 import type { HostManagementController } from './useHostManagement';
 import type { useAgentNotifications } from './useAgentNotifications';
@@ -9,8 +9,6 @@ import type { SessionRuntimeStore } from './sessionRuntimeTypes';
 import {
   foregroundUsesBriefAlerts,
   isAgentAlertingStatus,
-  previousVisibleAgentStatus,
-  shouldNotifyAgentTransition,
   tabNameForAgent,
 } from '../lib/agentStatusEvents';
 import {
@@ -21,15 +19,12 @@ import { alertAgent, dismissAgentAlertsForPane } from '../services/alerts';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { defaultDevicePreferences } from '../services/devicePreferences';
 import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
-import type { AgentStatus, HerdrSnapshot, PaneInfo } from '../types';
+import type { HerdrSnapshot, PaneInfo } from '../types';
 
 interface AgentStateChange {
   sessionId: string;
-  hostState: HostRuntimeState;
   snapshot: HerdrSnapshot;
-  visibleSnapshot?: HerdrSnapshot;
-  previousStatuses: Map<string, AgentStatus> | null;
-  changedAgentPaneIds?: string[];
+  transitions: RuntimeAgentStatusTransition[];
 }
 
 export function useAgentNotificationSideEffects({
@@ -53,44 +48,23 @@ export function useAgentNotificationSideEffects({
   return useCallback(
     ({
       sessionId,
-      hostState,
       snapshot,
-      visibleSnapshot,
-      previousStatuses,
-      changedAgentPaneIds = [],
-    }: AgentStateChange): Map<string, AgentStatus> => {
-      const statuses = new Map(
-        snapshot.agents.map(agent => [agent.pane_id, agent.agent_status]),
-      );
-      const changed = new Set(changedAgentPaneIds);
-      if (previousStatuses) {
-        for (const agent of snapshot.agents) {
-          if (previousStatuses.get(agent.pane_id) !== agent.agent_status) {
-            changed.add(agent.pane_id);
-          }
-        }
-      }
-      for (const paneId of changed) {
+      transitions,
+    }: AgentStateChange): void => {
+      for (const transition of transitions) {
+        const { paneId, current: status } = transition;
         const agent = snapshot.agents.find(item => item.pane_id === paneId);
-        const status =
-          agent?.agent_status ??
-          snapshot.panes.find(item => item.pane_id === paneId)?.agent_status;
-        if (!status) continue;
-        const previous = previousVisibleAgentStatus(
-          visibleSnapshot,
-          paneId,
-          previousStatuses?.get(paneId),
-        );
-        if (!isAgentAlertingStatus(status)) {
+        if (!status || !isAgentAlertingStatus(status)) {
           reportBackgroundFailure(
             dismissAgentAlertsForPane(sessionId, paneId),
             'pane-alert-dismiss',
           );
         }
         if (
+          status &&
           agent &&
           alertsEnabledRef.current &&
-          shouldNotifyAgentTransition(previous, status)
+          isAgentAlertingStatus(status)
         ) {
           const brief = foregroundUsesBriefAlerts(
             AppState.currentState === 'active',
@@ -111,10 +85,10 @@ export function useAgentNotificationSideEffects({
           sessionId,
           paneId,
           status,
-          revision: hostState.revision,
+          previousStatus: transition.previous,
+          revision: transition.revision,
         });
       }
-      return statuses;
     },
     [],
   );

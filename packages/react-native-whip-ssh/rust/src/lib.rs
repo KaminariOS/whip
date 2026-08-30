@@ -2,12 +2,14 @@
 
 mod agent_sessions;
 mod agent_transcript;
+mod app_core;
 mod codex;
 mod herdr_api;
 mod herdr_codec;
 mod herdr_connection;
 mod herdr_events;
 mod herdr_terminal;
+mod host_profiles;
 mod host_runtime;
 mod host_state;
 mod pairing;
@@ -17,9 +19,11 @@ mod ssh;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;
+pub use app_core::*;
 pub use herdr_api::*;
 pub use herdr_events::*;
 pub use herdr_terminal::*;
+pub use host_profiles::*;
 pub use host_runtime::*;
 pub use host_state::*;
 pub use remote_ops::*;

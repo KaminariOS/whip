@@ -15,12 +15,6 @@ import type {
   ConnectOptions,
   SessionRuntimeStore,
 } from './sessionRuntimeTypes';
-import {
-  closeLiveHostSession,
-  openLiveHostSession,
-  selectLiveHostSession,
-  updateLiveHostConnection,
-} from '../liveHostSessions';
 import { requiresBiometricForSavedKey } from '../lib/biometricSecurity';
 import { hostDisplayName, resolveJumpHostChain } from '../lib/hostProfiles';
 import { allSettledWithConcurrency } from '../lib/promisePool';
@@ -56,14 +50,23 @@ export function useSessionStartupRestore({
   reopenTerminalOnLaunch,
   state,
   stateRef,
-  setState,
+  appCoreRef,
+  sessionProfilesRef,
+  commitAppCore,
   restoredTerminalHostIdsRef,
   hosts,
   navigation,
   security,
   connect,
   t,
-}: Pick<SessionRuntimeStore, 'state' | 'stateRef' | 'setState'> & {
+}: Pick<
+  SessionRuntimeStore,
+  | 'state'
+  | 'stateRef'
+  | 'appCoreRef'
+  | 'sessionProfilesRef'
+  | 'commitAppCore'
+> & {
   startupStorage: LoadState<StartupStorageSnapshot>;
   deferredHydrationReady: boolean;
   preferencesLoaded: boolean;
@@ -144,15 +147,19 @@ export function useSessionStartupRestore({
       const persistedHosts = persisted.hostIds
         .map(hostId => hosts.getHosts().find(item => item.id === hostId))
         .filter((host): host is HostProfile => Boolean(host));
-      setState(current => {
-        let next = current;
-        for (const host of persistedHosts) {
-          next = openLiveHostSession(next, host, host.id, false);
-        }
-        return persisted.activeHostId
-          ? selectLiveHostSession(next, persisted.activeHostId)
-          : next;
-      });
+      let initialView = appCoreRef.current.view();
+      for (const host of persistedHosts) {
+        sessionProfilesRef.current.set(host.id, host);
+        initialView = appCoreRef.current.openSession(
+          host.id,
+          host.id,
+          false,
+        );
+      }
+      if (persisted.activeHostId) {
+        initialView = appCoreRef.current.selectHost(persisted.activeHostId);
+      }
+      commitAppCore(initialView);
       const hasProtectedKey = persistedHosts.some(host => {
         try {
           return [host, ...resolveJumpHostChain(hosts.getHosts(), host)].some(
@@ -196,7 +203,7 @@ export function useSessionStartupRestore({
           // The connect path reports missing or cyclic jump-host configuration.
         }
         if (protectedKey && !protectedKeyAccessGranted) {
-          setState(current => closeLiveHostSession(current, hostId));
+          commitAppCore(appCoreRef.current.closeSession(hostId));
           return;
         }
         try {
@@ -222,11 +229,12 @@ export function useSessionStartupRestore({
             error: String(restoreError),
           });
           hosts.setError(message);
-          setState(current =>
-            updateLiveHostConnection(current, hostId, {
-              status: 'error',
-              error: message,
-            }),
+          commitAppCore(
+            appCoreRef.current.setPlaceholderConnection(
+              hostId,
+              'error',
+              message,
+            ),
           );
         }
       };
@@ -240,7 +248,7 @@ export function useSessionStartupRestore({
         await withAppPerformanceTrace('Whip startup restore: active host', () =>
           restoreHost(activeHostId),
         );
-        setState(current => selectLiveHostSession(current, activeHostId));
+        commitAppCore(appCoreRef.current.selectSession(activeHostId));
         if (
           reopenTerminalOnLaunch &&
           restoredTerminalHostIdsRef.current.has(activeHostId)
@@ -260,12 +268,7 @@ export function useSessionStartupRestore({
           ),
       );
       if (persisted.activeHostId) {
-        setState(current => {
-          const active = current.sessions.find(
-            session => session.hostId === persisted.activeHostId,
-          );
-          return active ? selectLiveHostSession(current, active.id) : current;
-        });
+        commitAppCore(appCoreRef.current.selectHost(persisted.activeHostId));
       }
       if (reopenTerminalOnLaunch && !activeTerminalReopened) {
         const terminalHostId =
@@ -277,14 +280,7 @@ export function useSessionStartupRestore({
             .reverse()
             .find(hostId => restoredTerminalHostIdsRef.current.has(hostId));
         if (terminalHostId) {
-          setState(current => {
-            const terminalHost = current.sessions.find(
-              session => session.hostId === terminalHostId,
-            );
-            return terminalHost
-              ? selectLiveHostSession(current, terminalHost.id)
-              : current;
-          });
+          commitAppCore(appCoreRef.current.selectHost(terminalHostId));
           navigation.showTerminal(terminalHostId);
         }
       }

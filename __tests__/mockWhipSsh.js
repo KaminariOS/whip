@@ -12,6 +12,130 @@ function unavailable(error) {
     || value.includes('socket is not established');
 }
 
+class MockNativeHostProfileStore {
+  constructor() { this.hosts = []; this.revision = 0; }
+  normalizeProfile(profile, previousCreatedAt, now) {
+    const host = {
+      ...profile,
+      id: profile.id.trim(), name: profile.name.trim(), host: profile.host.trim(),
+      port: profile.port.trim() || '22', username: profile.username.trim(),
+      jumpHostId: profile.jumpHostId?.trim() || undefined,
+      forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
+      herdrCommand: profile.herdrCommand.trim() || 'herdr',
+      herdrSocketPath: profile.herdrSocketPath.trim(), sessionName: profile.sessionName.trim(),
+      createdAt: previousCreatedAt || profile.createdAt || now, updatedAt: now,
+    };
+    if (!host.id || !host.host || !host.username) throw new Error('invalid host profile');
+    return host;
+  }
+  result() {
+    return { revision: ++this.revision, hosts: this.hosts, persistedValue: JSON.stringify(this.hosts) };
+  }
+  hydrate(value) {
+    const parsed = value === undefined ? [] : JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error('host profile data is malformed');
+    this.hosts = parsed.map(profile => {
+      const { rememberCredentials: _ignored, ...host } = profile;
+      return this.normalizeProfile(host, host.createdAt, host.updatedAt);
+    }).sort((a, b) => (b.lastConnectedAt || '').localeCompare(a.lastConnectedAt || '')
+      || (a.name || a.host).localeCompare(b.name || b.host));
+    return this.result();
+  }
+  view() { return this.result(); }
+  upsert(profile, now) {
+    const previous = this.hosts.find(host => host.id === profile.id);
+    const next = this.normalizeProfile(profile, previous?.createdAt, now);
+    this.hosts = [...this.hosts.filter(host => host.id !== next.id), next]
+      .sort((a, b) => (b.lastConnectedAt || '').localeCompare(a.lastConnectedAt || '')
+        || (a.name || a.host).localeCompare(b.name || b.host));
+    return this.result();
+  }
+  markDisconnected(id, now) {
+    this.hosts = this.hosts.map(host => host.id === id
+      ? { ...host, lastConnectedAt: now, updatedAt: now } : host);
+    return this.hydrate(JSON.stringify(this.hosts));
+  }
+  remove(id, now) {
+    this.hosts = this.hosts.filter(host => host.id !== id).map(host => host.jumpHostId === id
+      ? { ...host, jumpHostId: undefined, updatedAt: now } : host);
+    return this.result();
+  }
+  resolveJumpChain(profileId, jumpHostId) {
+    const byId = new Map(this.hosts.map(host => [host.id, host]));
+    const seen = new Set([profileId]);
+    const chain = [];
+    for (let id = jumpHostId; id;) {
+      if (seen.has(id)) throw new Error('cycle');
+      const host = byId.get(id);
+      if (!host) throw new Error(`missing jump host ${id}`);
+      seen.add(id); chain.unshift(host); id = host.jumpHostId;
+    }
+    return chain;
+  }
+  jumpCandidates(profileId) {
+    return this.hosts.filter(host => {
+      if (host.id === profileId) return false;
+      try { this.resolveJumpChain(profileId, host.id); return true; } catch { return false; }
+    });
+  }
+  migrateLegacy(value, now) {
+    const parsed = JSON.parse(value);
+    if (!parsed.host || !parsed.username) return undefined;
+    const ip = /^\d{1,3}(\.\d{1,3}){3}$/.test(parsed.host);
+    return this.normalizeProfile({
+      id: 'host-legacy-default', name: parsed.name || (ip ? parsed.host : parsed.host.split('.')[0]),
+      host: parsed.host, port: parsed.port || '22', username: parsed.username,
+      forwardAgent: false, authMode: parsed.authMode === 'key' ? 'key' : 'password',
+      herdrCommand: parsed.herdrCommand || 'herdr', herdrSocketPath: parsed.herdrSocketPath || '',
+      sessionName: parsed.sessionName || '', createdAt: now, updatedAt: now,
+    }, undefined, now);
+  }
+}
+
+class MockNativeKnownHostStore {
+  constructor() { this.hosts = []; this.pending = undefined; this.token = 0n; }
+  result(hosts = this.hosts) {
+    return { revision: 1, hosts, persistedValue: JSON.stringify(hosts) };
+  }
+  hydrate(value) {
+    const parsed = value === undefined ? [] : JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error('malformed known hosts');
+    this.hosts = parsed;
+    this.pending = undefined;
+    return this.result();
+  }
+  view() { return this.result(); }
+  prepareAdd(challenge, id, createdAt) {
+    if (this.hosts.some(host => host.host.toLowerCase() === challenge.host.toLowerCase()
+      && host.port === challenge.port && host.keyType === challenge.keyType
+      && host.fingerprint === challenge.fingerprint)) {
+      return { token: 0n, changed: false, view: this.result() };
+    }
+    const hosts = [...this.hosts, { ...challenge, id, createdAt }];
+    const token = ++this.token;
+    this.pending = { token, hosts };
+    return { token, changed: true, view: this.result(hosts) };
+  }
+  prepareRemove(id) {
+    const hosts = this.hosts.filter(host => host.id !== id);
+    if (hosts.length === this.hosts.length) return { token: 0n, changed: false, view: this.result() };
+    const token = ++this.token;
+    this.pending = { token, hosts };
+    return { token, changed: true, view: this.result(hosts) };
+  }
+  commit(token) {
+    if (this.pending?.token !== token) throw new Error('invalid mutation');
+    this.hosts = this.pending.hosts;
+    this.pending = undefined;
+    return this.result();
+  }
+  rollback(token) {
+    if (this.pending?.token !== token) throw new Error('invalid mutation');
+    this.pending = undefined;
+    return this.result();
+  }
+}
+
 function createMockWhipSshModule() {
   const api = {
     connectWithPassword: jest.fn(),
@@ -61,8 +185,8 @@ function createMockWhipSshModule() {
       focus: {},
     };
 
-    const emitHostState = (changedAgentPaneIds = []) => lifecycleHandler?.({
-      type: 'host-state', state: hostState, changedAgentPaneIds,
+    const emitHostState = (agentStatusTransitions = []) => lifecycleHandler?.({
+      type: 'host-state', state: hostState, agentStatusTransitions,
     });
 
     const socketPath = async () => {
@@ -140,6 +264,7 @@ function createMockWhipSshModule() {
         lifecycleHandler?.({ type: 'reconnected', generation, restoredTerminals: bridges.size });
       },
       status() { return { state: clients.length ? 'connected' : 'disconnected', generation }; },
+      setMonitoringState() {},
       hostState() { return hostState; },
       async refreshState() {
         const syncGeneration = hostState.syncGeneration + 1;
@@ -460,7 +585,12 @@ function createMockWhipSshModule() {
     return runtime;
   });
 
-  return { __esModule: true, createHostRuntime: api.createHostRuntime };
+  return {
+    __esModule: true,
+    createHostRuntime: api.createHostRuntime,
+    NativeHostProfileStore: MockNativeHostProfileStore,
+    NativeKnownHostStore: MockNativeKnownHostStore,
+  };
 }
 
 function getMockWhipSshControl() {

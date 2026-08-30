@@ -27,7 +27,7 @@ pub(super) fn reconcile_control_result(
             .apply_control_result(generation, request, result)
     };
     if !matches!(outcome, ApplyResult::IgnoredStale) {
-        emit_host_state(inner, Vec::new());
+        emit_host_state(inner);
     }
     if matches!(request, HerdrControlRequest::PaneClose { .. })
         && matches!(result, HerdrControlResult::Ok)
@@ -65,7 +65,7 @@ pub(super) fn begin_host_state_sync(inner: &RuntimeInner) -> (u64, SnapshotToken
         drop(state);
         (generation, token)
     };
-    emit_host_state(inner, Vec::new());
+    emit_host_state(inner);
     (connection_generation, token)
 }
 
@@ -98,7 +98,7 @@ pub(super) async fn request_host_state_snapshot(
             .host_state
             .fail_sync(token, error.to_string()),
     };
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     outcome
 }
 
@@ -157,7 +157,7 @@ pub(super) fn event_subscription_start_failed(inner: Arc<RuntimeInner>, reason: 
         .lock()
         .host_state
         .mark_needs_resync(format!("event subscription unavailable: {reason}"));
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     emit(HostRuntimeEvent::EventSubscriptionClosed {
         runtime_id: inner.id.clone(),
         reason: reason.clone(),
@@ -173,7 +173,7 @@ pub(super) async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostSt
             .lock()
             .host_state
             .fail_sync(token, error.to_string());
-        emit_host_state(&inner, Vec::new());
+        emit_host_state(&inner);
         return inner.state.lock().host_state.projection();
     }
 
@@ -263,7 +263,7 @@ pub(crate) fn deliver_herdr_events(
         result
     };
     if result.changed {
-        emit_host_state(&runtime, result.changed_agent_pane_ids);
+        emit_host_state(&runtime);
     }
     if let Some(reason) = result.resync_reason {
         schedule_state_resync(runtime, reason);
@@ -283,7 +283,7 @@ pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> boo
         runtime.clone(),
         format!("event subscription closed: {reason}"),
     );
-    emit_host_state(&runtime, Vec::new());
+    emit_host_state(&runtime);
     emit(HostRuntimeEvent::EventSubscriptionClosed {
         runtime_id: runtime.id.clone(),
         reason: reason.clone(),

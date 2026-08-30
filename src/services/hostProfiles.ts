@@ -6,12 +6,14 @@ import {
   LEGACY_CREDENTIAL_SERVICE,
   LEGACY_PROFILE_KEY,
   hostCredentialService,
+  hydrateHostProfiles,
   migrateLegacyProfile,
   parseHosts,
+  prepareHostDisconnected,
+  prepareHostRemoval,
+  prepareHostUpsert,
   resolveJumpHostChain,
-  sortHosts,
   toHostProfile,
-  upsertHost,
 } from '../lib/hostProfiles';
 import type { ConnectionProfile, HostProfile } from '../types';
 import { reportBackgroundFailure } from './backgroundOperations';
@@ -78,7 +80,7 @@ export async function loadHostProfilesFromStorage(
   const legacy = migrateLegacyProfile(legacyValue, error => {
     recordHostProfilesParseFailure(error, LEGACY_PROFILE_KEY, 'empty-hosts');
   });
-  if (!legacy) return [];
+  if (!legacy) return parseHosts(null);
 
   const credential = await Keychain.getGenericPassword({ service: LEGACY_CREDENTIAL_SERVICE });
   const secrets = parseCredential(credential ? credential.password : null, legacy.id)
@@ -87,6 +89,7 @@ export async function loadHostProfilesFromStorage(
   const host = toHostProfile(migrated);
 
   await writeHostProfiles(JSON.stringify([host]), 'startup-migration');
+  hydrateHostProfiles([host]);
   if (migrated.secret) {
     await writeCredential(migrated);
   }
@@ -195,8 +198,13 @@ export async function saveConnectionProfile(
 ): Promise<{ hosts: HostProfile[]; host: HostProfile }> {
   const previous = hosts.find(host => host.id === profile.id);
   const host = toHostProfile(profile, previous);
-  const nextHosts = upsertHost(hosts, host);
-  await writeHostProfiles(JSON.stringify(nextHosts), 'profile-save');
+  const next = prepareHostUpsert(hosts, host);
+  try {
+    await writeHostProfiles(next.persistedValue, 'profile-save');
+  } catch (error) {
+    hydrateHostProfiles(hosts);
+    throw error;
+  }
 
   if (profile.secret) {
     await writeCredential(profile);
@@ -204,30 +212,34 @@ export async function saveConnectionProfile(
     await Keychain.resetGenericPassword({ service: hostCredentialService(profile.id) });
     await removeCredentialBackup(profile.id);
   }
-  return { hosts: nextHosts, host };
+  return { hosts: next.hosts, host };
 }
 
 /** Records when the host connection ended; the Hosts screen presents this as last connected. */
 export async function markHostDisconnected(hosts: HostProfile[], id: string): Promise<HostProfile[]> {
   const now = new Date().toISOString();
-  const next = sortHosts(hosts.map(host => (
-    host.id === id ? { ...host, lastConnectedAt: now, updatedAt: now } : host
-  )));
-  await writeHostProfiles(JSON.stringify(next), 'disconnect-persistence');
-  return next;
+  const next = prepareHostDisconnected(hosts, id, now);
+  try {
+    await writeHostProfiles(next.persistedValue, 'disconnect-persistence');
+  } catch (error) {
+    hydrateHostProfiles(hosts);
+    throw error;
+  }
+  return next.hosts;
 }
 
 export async function deleteHostProfile(hosts: HostProfile[], id: string): Promise<HostProfile[]> {
   const now = new Date().toISOString();
-  const next = hosts
-    .filter(host => host.id !== id)
-    .map(host => host.jumpHostId === id
-      ? { ...host, jumpHostId: undefined, updatedAt: now }
-      : host);
-  await writeHostProfiles(JSON.stringify(next), 'profile-delete');
+  const next = prepareHostRemoval(hosts, id, now);
+  try {
+    await writeHostProfiles(next.persistedValue, 'profile-delete');
+  } catch (error) {
+    hydrateHostProfiles(hosts);
+    throw error;
+  }
   await Keychain.resetGenericPassword({ service: hostCredentialService(id) });
   await removeCredentialBackup(id);
-  return next;
+  return next.hosts;
 }
 
 async function writeCredential(profile: ConnectionProfile): Promise<void> {

@@ -4,13 +4,9 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 jest.mock('../src/services/terminalBackground', () => ({}));
 jest.mock('../src/services/appBackground', () => ({}));
-jest.mock('react-native-whip-ssh', () => ({
-  __esModule: true,
-  setTrustedHostKeys: jest.fn(),
-}));
+jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setTrustedHostKeys } from 'react-native-whip-ssh';
 
 import { knownHostsFromStorage } from '../src/services/knownHosts';
 import {
@@ -39,7 +35,7 @@ test('reads every startup value through one AsyncStorage bridge call', async () 
   expect(snapshot.herdrSocketPaths).toBe('value:herdr.api-socket-paths.v1');
 });
 
-test('startup snapshot known hosts are strictly parsed and installed natively', async () => {
+test('startup snapshot known hosts are strictly parsed by the native store', async () => {
   const storedKnownHost = {
     id: 'known-host-startup',
     host: 'startup.example',
@@ -60,12 +56,6 @@ test('startup snapshot known hosts are strictly parsed and installed natively', 
   const state = knownHostsFromStorage(snapshot.knownHosts);
 
   expect(state).toEqual({ status: 'loaded', hosts: [storedKnownHost] });
-  expect(setTrustedHostKeys).toHaveBeenCalledWith([{
-    host: 'startup.example',
-    port: 2222,
-    keyType: 'ssh-ed25519',
-    publicKey: 'AAAAStartupKey',
-  }]);
 });
 
 test('an omitted multiGet entry is a read failure, not an authoritative null', async () => {

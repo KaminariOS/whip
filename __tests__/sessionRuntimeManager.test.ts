@@ -2,7 +2,6 @@ import {
   destroyRuntime,
   disposeRuntimeMap,
   savedHostConnectionAction,
-  shouldRestartLiveSession,
   shouldRetainBackgroundRuntimes,
   waitForRuntimeDestruction,
 } from '../src/lib/sessionRuntimePolicy';
@@ -14,13 +13,6 @@ describe('session runtime lifecycle policy', () => {
     expect(savedHostConnectionAction('ready', false)).toBe('connect');
     expect(savedHostConnectionAction('connecting', false)).toBe('wait');
     expect(savedHostConnectionAction('ready', true)).toBe('select');
-  });
-
-  test('restarts all sessions on network change but only unhealthy sessions on resume', () => {
-    expect(shouldRestartLiveSession('network-change', 'ready')).toBe(true);
-    expect(shouldRestartLiveSession('app-resume', 'error')).toBe(true);
-    expect(shouldRestartLiveSession('app-resume', 'reconnecting')).toBe(true);
-    expect(shouldRestartLiveSession('app-resume', 'ready')).toBe(false);
   });
 
   test('retains background runtimes only for Android alert monitoring', () => {

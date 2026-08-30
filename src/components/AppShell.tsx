@@ -143,6 +143,18 @@ export function AppShell({
   const selectedHerdWorkspaceId = selectedHerdHostId
     ? navigation.herdWorkspaceFilterIds[selectedHerdHostId] ?? null
     : null;
+  const herdProjection = useMemo(
+    () => sessions.herdView(
+      sessions.state.sessions.map(session => ({
+        sessionId: session.id,
+        hostLabel: hostDisplayName(session.host),
+        address: session.host.host,
+      })),
+      selectedHerdHostId ?? undefined,
+      selectedHerdWorkspaceId ?? undefined,
+    ),
+    [selectedHerdHostId, selectedHerdWorkspaceId, sessions],
+  );
   const railSessions: LiveSessionRailItem[] = sessions.state.sessions.map(
     session => ({
       hostId: session.id,
@@ -154,20 +166,7 @@ export function AppShell({
       terminalCount: terminals.get(session.id).sessions.length,
     }),
   );
-  const herdQueues: HerdHostQueue[] = useMemo(
-    () =>
-      sessions.state.sessions.map(session => ({
-        id: session.id,
-        label: hostDisplayName(session.host),
-        address: session.host.host,
-        running: session.snapshot.server.running,
-        refreshing: session.sync.status === 'syncing',
-        agents: session.snapshot.agents,
-        workspaces: session.snapshot.workspaces,
-        tabs: session.snapshot.tabs,
-      })),
-    [sessions.state.sessions],
-  );
+  const herdQueues: HerdHostQueue[] = herdProjection.hosts;
 
   const openAgentFiles = (sessionId: string, paneId: string) => {
     const pane = sessions.state.sessions
@@ -315,9 +314,10 @@ export function AppShell({
                       {sessions.state.sessions.length > 0 ? (
                         <HerdScreen
                           queues={herdQueues}
+                          agents={herdProjection.agents}
                           sessions={railSessions}
-                          selectedHostId={selectedHerdHostId}
-                          workspaceFilterId={selectedHerdWorkspaceId}
+                          selectedHostId={herdProjection.selectedHostId ?? null}
+                          workspaceFilterId={herdProjection.selectedWorkspaceId ?? null}
                           agentCommand={agentCommand}
                           commandHistory={history.entries}
                           onSelectHost={sessionId => {

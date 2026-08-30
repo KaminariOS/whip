@@ -6,7 +6,10 @@ import {
 } from 'react-test-renderer';
 
 import { HostSessionRecoveryScreen } from '../src/components/HostSessionRecoveryScreen';
-import { createLiveHostSession } from '../src/liveHostSessions';
+import {
+  createEmptyHerdrSnapshot,
+  type LiveHostSession,
+} from '../src/liveHostSessions';
 import { hostSessionRecoveryState } from '../src/lib/hostSessionRecovery';
 import type { HostProfile } from '../src/types';
 
@@ -101,7 +104,7 @@ describe('HostSessionRecoveryScreen', () => {
 describe('missing host runtime recovery selection', () => {
   test('terminal mode chooses recovery when its active session has no runtime', () => {
     const session = {
-      ...createLiveHostSession(host()),
+      ...sessionFixture(host()),
       status: 'error' as const,
       connectionError: 'connection refused',
     };
@@ -121,7 +124,7 @@ describe('missing host runtime recovery selection', () => {
   });
 
   test('connected and non-terminal views do not choose recovery', () => {
-    const session = createLiveHostSession(host());
+    const session = sessionFixture(host());
 
     expect(
       hostSessionRecoveryState({
@@ -143,7 +146,7 @@ describe('missing host runtime recovery selection', () => {
 
   test('a reconnect already in flight disables duplicate retry', () => {
     const session = {
-      ...createLiveHostSession(host()),
+      ...sessionFixture(host()),
       status: 'error' as const,
     };
 
@@ -170,5 +173,27 @@ function host(): HostProfile {
     sessionName: 'main',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+function sessionFixture(value: HostProfile): LiveHostSession {
+  return {
+    id: value.id,
+    hostId: value.id,
+    host: value,
+    status: 'connecting',
+    connectionError: null,
+    reconnectAttempt: 0,
+    snapshot: createEmptyHerdrSnapshot(),
+    sync: {
+      status: 'idle',
+      generation: 0,
+      connectionGeneration: 0,
+      revision: 0,
+      freshness: 'loading',
+      error: null,
+      lastSyncedAt: null,
+    },
+    selection: { workspaceId: null, tabId: null, paneId: null },
   };
 }

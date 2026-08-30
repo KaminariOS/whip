@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  AppCoreProjection,
+  NativeAppCore,
+  RuntimeTerminalState,
+} from 'react-native-whip-ssh';
 
 import {
-  closeTerminalSession,
   emptyTerminalSessions,
-  openSshShellSession,
-  openTerminalSession,
-  reconcileTerminalSessions,
-  updateTerminalSession,
   type TerminalSessionsState,
   type TerminalSessionStatus,
 } from '../terminalSessions';
-import type { HerdrSnapshot, PaneInfo } from '../types';
+import type { PaneInfo } from '../types';
 import {
   loadPersistedTerminals,
   PersistedTerminalsWriter,
@@ -24,6 +24,11 @@ export interface HostTerminalSessions {
 }
 
 export type TerminalSessionsByHost = ReadonlyMap<string, HostTerminalSessions>;
+
+type CoreBinding = {
+  core: NativeAppCore;
+  commit: (view: AppCoreProjection) => void;
+};
 
 export function updateHostTerminalSessions(
   state: TerminalSessionsByHost,
@@ -40,14 +45,13 @@ export function updateHostTerminalSessions(
   return next;
 }
 
-/**
- * Owns terminal metadata, restoration, and persistence. Host runtime state is
- * deliberately an input to specific operations rather than part of this state.
- */
+/** React cache, persistence adapter, and visual-only state for Rust terminal rails. */
 export function useTerminalSessions() {
   const [state, setState] = useState<TerminalSessionsByHost>(() => new Map());
   const stateRef = useRef(state);
+  const coreBindingRef = useRef<CoreBinding | null>(null);
   const composerDraftsRef = useRef(new Map<string, string>());
+  const fontSizesRef = useRef(new Map<string, number>());
   const writerRef = useRef(new PersistedTerminalsWriter());
   stateRef.current = state;
 
@@ -66,42 +70,69 @@ export function useTerminalSessions() {
     writerRef.current.retainSessions(retainedSessionIds);
   }, [state]);
 
-  const replace = useCallback(
-    (sessionId: string, hostId: string, terminals: TerminalSessionsState) => {
-      setState(current =>
-        updateHostTerminalSessions(current, sessionId, hostId, () => terminals),
-      );
+  const bindAppCore = useCallback(
+    (core: NativeAppCore, commit: (view: AppCoreProjection) => void) => {
+      coreBindingRef.current = { core, commit };
     },
     [],
   );
 
-  const update = useCallback(
-    (
-      sessionId: string,
-      updater: (current: TerminalSessionsState) => TerminalSessionsState,
-    ) => {
-      setState(current => {
-        const host = current.get(sessionId);
-        return host
-          ? updateHostTerminalSessions(current, sessionId, host.hostId, updater)
-          : current;
-      });
-    },
+  const stateFromView = useCallback(
+    (view: AppCoreProjection): TerminalSessionsByHost => new Map(
+      view.sessions.map(session => [
+        session.id,
+        {
+          hostId: session.hostId,
+          terminals: {
+            activeTerminalId: session.terminalRail.activeTerminalId ?? null,
+            sessions: session.terminalRail.terminals.map(terminal => ({
+              ...terminal,
+              fontSize: fontSizesRef.current.get(
+                terminalKey(session.id, terminal.terminalId),
+              ),
+            })),
+          },
+        },
+      ]),
+    ),
     [],
   );
+
+  const projectAppCore = useCallback(
+    (view: AppCoreProjection) => setState(stateFromView(view)),
+    [stateFromView],
+  );
+
+  const requireCore = useCallback((): CoreBinding => {
+    const binding = coreBindingRef.current;
+    if (!binding) throw new Error('Rust AppCore is not attached to terminal state');
+    return binding;
+  }, []);
 
   const restore = useCallback(
     async (
       sessionId: string,
       hostId: string,
-      snapshot: HerdrSnapshot,
     ): Promise<TerminalSessionsState> => {
-      const terminals = await loadPersistedTerminals(hostId, snapshot);
+      const persisted = await loadPersistedTerminals(hostId);
+      for (const [terminalId, fontSize] of persisted.fontSizes) {
+          fontSizesRef.current.set(
+            terminalKey(sessionId, terminalId),
+            fontSize,
+          );
+      }
+      const { core } = requireCore();
+      const view = core.restoreTerminals(
+        sessionId,
+        persisted.terminalIds,
+        persisted.activeTerminalId ?? undefined,
+      );
+      const terminals = stateFromView(view).get(sessionId)?.terminals
+        ?? emptyTerminalSessions;
       writerRef.current.observe(sessionId, terminals);
-      replace(sessionId, hostId, terminals);
       return terminals;
     },
-    [replace],
+    [requireCore, stateFromView],
   );
 
   const remove = useCallback((sessionId: string) => {
@@ -111,6 +142,9 @@ export function useTerminalSessions() {
         savePersistedTerminals(host.hostId, host.terminals),
         'terminal-session-remove-persist',
       );
+    }
+    for (const key of fontSizesRef.current.keys()) {
+      if (key.startsWith(`${sessionId}:`)) fontSizesRef.current.delete(key);
     }
     setState(current => {
       if (!current.has(sessionId)) return current;
@@ -126,76 +160,98 @@ export function useTerminalSessions() {
     [],
   );
 
-  const reconcile = useCallback(
-    (sessionId: string, panes: PaneInfo[]) => {
-      update(sessionId, terminals =>
-        reconcileTerminalSessions(terminals, panes),
-      );
-    },
-    [update],
-  );
+  const openPane = useCallback((sessionId: string, pane: PaneInfo) => {
+    const { core, commit } = requireCore();
+    commit(core.openPaneTerminal(sessionId, pane.pane_id));
+  }, [requireCore]);
 
-  const openPane = useCallback(
-    (sessionId: string, pane: PaneInfo) => {
-      update(sessionId, terminals => openTerminalSession(terminals, pane));
-    },
-    [update],
-  );
+  const openSshShell = useCallback((sessionId: string, title = 'SSH shell') => {
+    const { core, commit } = requireCore();
+    commit(core.openSshShell(sessionId, title));
+  }, [requireCore]);
 
-  const openSshShell = useCallback(
-    (sessionId: string, title?: string) => {
-      update(sessionId, terminals => openSshShellSession(terminals, title));
-    },
-    [update],
-  );
+  const close = useCallback((sessionId: string, terminalId: string) => {
+    const { core, commit } = requireCore();
+    commit(core.closeTerminal(sessionId, terminalId));
+  }, [requireCore]);
 
-  const close = useCallback(
-    (sessionId: string, terminalId: string) => {
-      update(sessionId, terminals =>
-        closeTerminalSession(terminals, terminalId),
-      );
-    },
-    [update],
-  );
+  const updateLifecycle = useCallback((
+    sessionId: string,
+    terminalId: string,
+    nativeState: RuntimeTerminalState,
+    retrying: boolean,
+    error?: string,
+    reconnectAttempt = 0,
+  ) => {
+    const { core, commit } = requireCore();
+    commit(core.updateTerminalLifecycle(
+      sessionId,
+      terminalId,
+      nativeState,
+      retrying,
+      error,
+      reconnectAttempt,
+    ));
+  }, [requireCore]);
 
-  const updateStatus = useCallback(
-    (
-      sessionId: string,
-      terminalId: string,
-      status: TerminalSessionStatus,
-      error?: string,
-      reconnectAttempt?: number,
-    ) => {
-      update(sessionId, terminals =>
-        updateTerminalSession(terminals, terminalId, {
-          status,
-          error,
-          reconnectAttempt:
-            reconnectAttempt ?? (status === 'connected' ? 0 : undefined),
-        }),
-      );
-    },
-    [update],
-  );
+  const updateStatus = useCallback((
+    sessionId: string,
+    terminalId: string,
+    status: TerminalSessionStatus,
+    error?: string,
+    reconnectAttempt = 0,
+  ) => {
+    const nativeState: RuntimeTerminalState = status === 'connecting'
+      ? 'opening'
+      : status === 'connected'
+        ? 'attached'
+        : status === 'error'
+          ? 'failed'
+          : 'closed';
+    updateLifecycle(
+      sessionId,
+      terminalId,
+      nativeState,
+      false,
+      error,
+      reconnectAttempt,
+    );
+  }, [updateLifecycle]);
 
   const updateFontSize = useCallback(
     (sessionId: string, terminalId: string, fontSize: number) => {
-      update(sessionId, terminals =>
-        updateTerminalSession(terminals, terminalId, { fontSize }),
-      );
+      fontSizesRef.current.set(terminalKey(sessionId, terminalId), fontSize);
+      setState(current => {
+        const host = current.get(sessionId);
+        if (!host) return current;
+        const terminals = {
+          ...host.terminals,
+          sessions: host.terminals.sessions.map(terminal =>
+            terminal.terminalId === terminalId
+              ? { ...terminal, fontSize }
+              : terminal,
+          ),
+        };
+        return updateHostTerminalSessions(
+          current,
+          sessionId,
+          host.hostId,
+          () => terminals,
+        );
+      });
     },
-    [update],
+    [],
   );
 
   const getComposerDraft = useCallback(
     (sessionId: string, terminalId: string) =>
-      composerDraftsRef.current.get(`${sessionId}:${terminalId}`) || '',
+      composerDraftsRef.current.get(terminalKey(sessionId, terminalId)) || '',
     [],
   );
 
   const updateComposerDraft = useCallback(
     (sessionId: string, terminalId: string, value: string) => {
-      const key = `${sessionId}:${terminalId}`;
+      const key = terminalKey(sessionId, terminalId);
       if (value) composerDraftsRef.current.set(key, value);
       else composerDraftsRef.current.delete(key);
     },
@@ -205,33 +261,39 @@ export function useTerminalSessions() {
   return useMemo(
     () => ({
       state,
+      bindAppCore,
+      projectAppCore,
       get,
-      replace,
       restore,
       remove,
-      reconcile,
       openPane,
       openSshShell,
       close,
+      updateLifecycle,
       updateStatus,
       updateFontSize,
       getComposerDraft,
       updateComposerDraft,
     }),
     [
+      bindAppCore,
       close,
       get,
       getComposerDraft,
       openPane,
       openSshShell,
-      reconcile,
+      projectAppCore,
       remove,
-      replace,
       restore,
       state,
       updateComposerDraft,
       updateFontSize,
+      updateLifecycle,
       updateStatus,
     ],
   );
+}
+
+function terminalKey(sessionId: string, terminalId: string): string {
+  return `${sessionId}:${terminalId}`;
 }

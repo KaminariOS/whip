@@ -9,39 +9,31 @@ import {
   stopBackgroundMonitoring,
 } from '../services/backgroundMonitoring';
 
-const LIVE_HOST_HEALTHCHECK_MS = 15_000;
-const LIVE_HOST_RECONCILE_MS = 120_000;
-const VISIBLE_HOST_LATENCY_POLL_MS = 3_000;
-
-export type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
-
 interface LiveHostMonitoringOptions {
   liveHostCount: number;
   alertsEnabled: boolean;
   restoreComplete: boolean;
   hostsVisible: boolean;
   appAccessLocked: boolean;
-  restartConnections: (trigger: ReconnectRecoveryTrigger) => void;
-  measureLatencies: (reconnectImmediately?: boolean) => void;
-  resumeConnections: (reconcile?: boolean) => void;
+  setRuntimeMonitoringState: (
+    appActive: boolean,
+    hostsVisible: boolean,
+    accessLocked: boolean,
+  ) => void;
   onBackgroundMonitoringError: (error: unknown) => void;
 }
 
-/** Owns host heartbeat and foreground recovery scheduling. */
+/** Forwards coarse platform lifecycle signals to Rust-owned runtime policy. */
 export function useLiveHostMonitoring({
   liveHostCount,
   alertsEnabled,
   restoreComplete,
   hostsVisible,
   appAccessLocked,
-  restartConnections,
-  measureLatencies,
-  resumeConnections,
+  setRuntimeMonitoringState,
   onBackgroundMonitoringError,
 }: LiveHostMonitoringOptions): void {
-  const restart = useEffectEvent(restartConnections);
-  const measure = useEffectEvent(measureLatencies);
-  const resume = useEffectEvent(resumeConnections);
+  const updateRuntimeMonitoring = useEffectEvent(setRuntimeMonitoringState);
   const reportBackgroundError = useEffectEvent(onBackgroundMonitoringError);
 
   useEffect(() => {
@@ -64,36 +56,31 @@ export function useLiveHostMonitoring({
       });
       previousState = state;
       if (state === 'active') {
-        restart('app-resume');
-        measure(true);
-        resume(true);
+        updateRuntimeMonitoring(true, hostsVisible, appAccessLocked);
       } else {
+        updateRuntimeMonitoring(false, hostsVisible, appAccessLocked);
         reportBackgroundFailure(
           flushLatencyDiagnosticWrites(),
           'latency-diagnostics-flush',
         );
       }
     });
-    const heartbeat = setInterval(() => {
-      if (AppState.currentState === 'active') {
-        measure();
-        resume(false);
-      }
-    }, LIVE_HOST_HEALTHCHECK_MS);
-    const reconciliation = setInterval(() => {
-      if (AppState.currentState === 'active') resume(true);
-    }, LIVE_HOST_RECONCILE_MS);
+    updateRuntimeMonitoring(
+      AppState.currentState === 'active',
+      hostsVisible,
+      appAccessLocked,
+    );
     return () => {
       subscription.remove();
-      clearInterval(heartbeat);
-      clearInterval(reconciliation);
+      updateRuntimeMonitoring(false, false, appAccessLocked);
     };
-  }, [liveHostCount]);
+  }, [appAccessLocked, hostsVisible, liveHostCount]);
 
   useEffect(() => {
-    if (!hostsVisible || appAccessLocked) return;
-    measure();
-    const interval = setInterval(measure, VISIBLE_HOST_LATENCY_POLL_MS);
-    return () => clearInterval(interval);
-  }, [appAccessLocked, hostsVisible]);
+    updateRuntimeMonitoring(
+      AppState.currentState === 'active',
+      hostsVisible,
+      appAccessLocked,
+    );
+  }, [appAccessLocked, hostsVisible, liveHostCount]);
 }

@@ -190,7 +190,12 @@ describe('native HostRuntime adapter', () => {
       inner: {
         runtimeId: 'runtime-1',
         state: nativeState,
-        changedAgentPaneIds: ['p1'],
+        agentStatusTransitions: [{
+          paneId: 'p1',
+          previous: mockGenerated.HerdrAgentStatus.Working,
+          current: mockGenerated.HerdrAgentStatus.Blocked,
+          revision: 7n,
+        }],
       },
     });
     mockRuntimeEventSink.event({
@@ -231,7 +236,12 @@ describe('native HostRuntime adapter', () => {
     expect(handler).toHaveBeenNthCalledWith(3, {
       type: 'host-state',
       state: runtime.hostState(),
-      changedAgentPaneIds: ['p1'],
+      agentStatusTransitions: [{
+        paneId: 'p1',
+        previous: 'working',
+        current: 'blocked',
+        revision: 7,
+      }],
     });
     expect(handler).toHaveBeenNthCalledWith(4, {
       type: 'diagnostic',

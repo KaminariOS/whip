@@ -38,9 +38,12 @@ import {
 } from '../src/lib/sessionRuntimeActions';
 import {
   emptyTerminalSessions,
-  openSshShellSession,
+  type TerminalSessionsState,
 } from '../src/terminalSessions';
-import { createLiveHostSession } from '../src/liveHostSessions';
+import {
+  createEmptyHerdrSnapshot,
+  type LiveHostSession,
+} from '../src/liveHostSessions';
 import type { HerdrSnapshot, HostProfile, PaneInfo } from '../src/types';
 
 beforeEach(() => {
@@ -48,7 +51,17 @@ beforeEach(() => {
 });
 
 test('latency changes do not recreate or persist durable terminal metadata', async () => {
-  const terminals = openSshShellSession(emptyTerminalSessions);
+  const terminals: TerminalSessionsState = {
+    activeTerminalId: '__whip_ssh_shell__',
+    sessions: [{
+      terminalId: '__whip_ssh_shell__',
+      paneId: '__whip_ssh_shell__',
+      title: 'SSH shell',
+      kind: 'ssh',
+      status: 'connecting',
+      reconnectAttempt: 0,
+    }],
+  };
   const terminalState = updateHostTerminalSessions(
     new Map(),
     'session-1',
@@ -119,7 +132,7 @@ test('volatile host projection changes keep the durable live-host identity stabl
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   };
-  const session = createLiveHostSession(host, 'session-1');
+  const session = liveSessionFixture(host, 'session-1');
   const first = {
     activeSessionId: 'session-1',
     sessions: [session],
@@ -140,6 +153,31 @@ test('volatile host projection changes keep the durable live-host identity stabl
     ),
   ).toBe(persistedLiveHostsIdentity(persistedLiveHostsFromSessions(first)));
 });
+
+function liveSessionFixture(
+  host: HostProfile,
+  id: string,
+): LiveHostSession {
+  return {
+    id,
+    hostId: host.id,
+    host,
+    status: 'connecting',
+    connectionError: null,
+    reconnectAttempt: 0,
+    snapshot: createEmptyHerdrSnapshot(),
+    sync: {
+      status: 'idle',
+      generation: 0,
+      connectionGeneration: 0,
+      revision: 0,
+      freshness: 'loading',
+      error: null,
+      lastSyncedAt: null,
+    },
+    selection: { workspaceId: null, tabId: null, paneId: null },
+  };
+}
 
 describe('native-owned Herdr actions', () => {
   const runtime = () => ({

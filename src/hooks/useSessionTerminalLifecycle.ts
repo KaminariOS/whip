@@ -4,10 +4,7 @@ import type { TFunction } from 'i18next';
 import type { AppNavigationController } from './useAppNavigation';
 import type { useTerminalSessions } from './useTerminalSessions';
 import type { SessionRuntimeStore } from './sessionRuntimeTypes';
-import {
-  findLiveHostSession,
-  selectLiveHostWorkspaceView,
-} from '../liveHostSessions';
+import { findLiveHostSession } from '../liveHostSessions';
 import {
   launchTabAndOpenCreatedTab,
   type TabCreationResult,
@@ -26,7 +23,8 @@ import type { AgentInfo, HerdrSnapshot, PaneInfo } from '../types';
 export function useSessionTerminalLifecycle({
   state,
   stateRef,
-  setState,
+  appCoreRef,
+  commitAppCore,
   runtimesRef,
   terminals,
   navigation,
@@ -123,11 +121,11 @@ export function useSessionTerminalLifecycle({
 
   const selectWorkspace = useCallback(
     (sessionId: string, workspaceId: string) => {
-      setState(current =>
-        selectLiveHostWorkspaceView(current, sessionId, workspaceId),
+      commitAppCore(
+        appCoreRef.current.selectWorkspaceView(sessionId, workspaceId),
       );
     },
-    [setState],
+    [appCoreRef, commitAppCore],
   );
 
   const focusWorkspace = useCallback(

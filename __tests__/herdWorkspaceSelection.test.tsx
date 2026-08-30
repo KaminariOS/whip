@@ -138,6 +138,7 @@ function queue(workspaces: WorkspaceInfo[]): HerdHostQueue {
 function props(overrides: Record<string, unknown> = {}) {
   return {
     queues: [queue([workspace('space-a', true), workspace('space-b')])],
+    agents: [],
     sessions: [],
     selectedHostId: 'host-1',
     workspaceFilterId: 'space-a',
@@ -212,22 +213,22 @@ describe('Herd workspace selection intent', () => {
     });
   });
 
-  test('automatic single-workspace reconciliation remains local-only', () => {
+  test('accepts the Rust-projected single-workspace selection without echoing it', () => {
     const onSelectWorkspace = jest.fn();
     const onFocusWorkspace = jest.fn().mockResolvedValue(undefined);
     const onWorkspaceFilterChange = jest.fn();
     act(() => {
       renderer = create(<HerdScreen {...props({
         queues: [queue([workspace('only-space', true)])],
-        workspaceFilterId: null,
+        workspaceFilterId: 'only-space',
         onSelectWorkspace,
         onFocusWorkspace,
         onWorkspaceFilterChange,
       })} />);
     });
 
-    expect(onWorkspaceFilterChange).toHaveBeenCalledWith('host-1', 'only-space');
-    expect(onSelectWorkspace).toHaveBeenCalledWith('host-1', 'only-space');
+    expect(onWorkspaceFilterChange).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
     expect(onFocusWorkspace).not.toHaveBeenCalled();
   });
 

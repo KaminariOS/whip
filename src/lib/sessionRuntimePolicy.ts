@@ -1,6 +1,5 @@
 import { settledPromise } from './promises';
 
-export type ReconnectRecoveryTrigger = 'app-resume' | 'network-change';
 export type SavedHostConnectionAction = 'select' | 'wait' | 'connect';
 
 export function savedHostConnectionAction(
@@ -9,17 +8,6 @@ export function savedHostConnectionAction(
 ): SavedHostConnectionAction {
   if (hasRuntime) return 'select';
   return status === 'connecting' ? 'wait' : 'connect';
-}
-
-export function shouldRestartLiveSession(
-  trigger: ReconnectRecoveryTrigger,
-  status: string,
-): boolean {
-  return (
-    trigger === 'network-change' ||
-    status === 'error' ||
-    status === 'reconnecting'
-  );
 }
 
 export function shouldRetainBackgroundRuntimes(

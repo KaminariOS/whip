@@ -111,6 +111,8 @@ fn runtime_inner_with_state(
         cancellation,
         status_tx,
         terminal_settled: Notify::new(),
+        monitoring: Mutex::new(MonitoringState::default()),
+        monitoring_changed: Arc::new(Notify::new()),
     })
 }
 
@@ -628,7 +630,7 @@ fn runtime_callbacks_are_reentrant_and_diagnostics_are_isolated() {
     });
     set_host_runtime_event_sink(sink.clone());
 
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     clear_host_runtime_event_sink();
 
     assert!(sink.called.load(Ordering::SeqCst));
@@ -736,13 +738,22 @@ fn herdr_event_burst_is_fully_applied_before_one_projection() {
     assert_eq!(events.len(), 1);
     let HostRuntimeEvent::HostStateChanged {
         state,
-        changed_agent_pane_ids,
+        agent_status_transitions,
         ..
     } = &events[0]
     else {
         panic!("event burst emitted an unexpected runtime event");
     };
-    assert_eq!(changed_agent_pane_ids, &["pane-1", "pane-2"]);
+    assert_eq!(agent_status_transitions.len(), 1);
+    assert_eq!(agent_status_transitions[0].pane_id, "pane-2");
+    assert_eq!(
+        agent_status_transitions[0].previous,
+        Some(HerdrAgentStatus::Idle)
+    );
+    assert_eq!(
+        agent_status_transitions[0].current,
+        Some(HerdrAgentStatus::Working)
+    );
     let snapshot = state.snapshot.as_ref().unwrap();
     assert_eq!(snapshot.panes[0].agent_status, HerdrAgentStatus::Idle);
     assert_eq!(snapshot.panes[1].agent_status, HerdrAgentStatus::Working);

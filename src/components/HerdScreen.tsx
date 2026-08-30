@@ -38,11 +38,6 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  agentsForHerdFilter,
-  orderByAgentStatusPriority,
-  queuesForHerdFilter,
-  resolveHerdHostFilter,
-  resolveHerdWorkspaceFilter,
   type HerdHostQueue,
   type HerdQueueAgent,
 } from '@/src/herdQueue';
@@ -78,6 +73,7 @@ const HERD_AGENT_ROW_MIN_HEIGHT = 92;
 
 interface Props {
   queues: HerdHostQueue[];
+  agents: HerdQueueAgent[];
   sessions: LiveSessionRailItem[];
   selectedHostId: string | null;
   workspaceFilterId: string | null;
@@ -104,6 +100,7 @@ interface Props {
 
 export function HerdScreen({
   queues,
+  agents,
   sessions,
   selectedHostId,
   workspaceFilterId,
@@ -131,17 +128,16 @@ export function HerdScreen({
   const appGlassEnabled = useAppGlassEnabled();
   const { t } = useTranslation();
   const { bottom } = useSafeAreaInsets();
-  const resolvedHostId = resolveHerdHostFilter(queues, selectedHostId);
-  const scopedQueues = queuesForHerdFilter(queues, selectedHostId);
+  const resolvedHostId = selectedHostId;
+  const scopedQueues = resolvedHostId
+    ? queues.filter(queue => queue.id === resolvedHostId)
+    : queues;
   const selectedQueue = resolvedHostId ? scopedQueues[0] : undefined;
-  const selectedWorkspaceId = resolveHerdWorkspaceFilter(selectedQueue, workspaceFilterId);
+  const selectedWorkspaceId = workspaceFilterId;
   const selectedWorkspace = selectedQueue?.workspaces.find(
     workspace => workspace.workspace_id === selectedWorkspaceId,
   );
-  const queueAgents = useMemo(
-    () => agentsForHerdFilter(queues, selectedHostId, selectedWorkspaceId),
-    [queues, selectedHostId, selectedWorkspaceId],
-  );
+  const queueAgents = agents;
   const blocked = queueAgents.filter(
     item => item.agent.agent_status === 'blocked',
   ).length;
@@ -353,21 +349,12 @@ export function HerdScreen({
     [onCloseTab, showHerdrError],
   );
 
-  const sorted = useMemo(
-    () =>
-      orderByAgentStatusPriority(
-        queueAgents,
-        item => item.agent.agent_status,
-        item => item.agent.state_change_seq,
-      ),
-    [queueAgents],
-  );
   const visibleSorted = useMemo(
     () =>
-      sorted.filter(
+      queueAgents.filter(
         item => closingTabKey !== `${item.hostId}:${item.agent.tab_id}`,
       ),
-    [closingTabKey, sorted],
+    [closingTabKey, queueAgents],
   );
   const hostCountLabel = t('herd.hostCount', { count: queues.length });
   const renderAgent = useCallback(

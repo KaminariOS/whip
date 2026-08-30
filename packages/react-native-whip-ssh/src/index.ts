@@ -1,4 +1,6 @@
 import {
+  AppConnectionStatus,
+  AppCore as RustAppCore,
   AgentDiagnosticSeverity,
   AgentMessageRole,
   AgentNoticeLevel,
@@ -21,6 +23,9 @@ import {
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
   HostConnectionState,
+  HostAuthMode,
+  HostProfileStore as RustHostProfileStore,
+  KnownHostStore as RustKnownHostStore,
   HostFreshness,
   HostTerminalResizeOutcome,
   HostTerminalState,
@@ -33,6 +38,8 @@ import {
   RemoteFileKind,
   SshErrorCode as NativeSshErrorCode,
   TransferState,
+  TerminalKind,
+  TerminalUiState,
   HostRuntimeEvent_Tags,
   HostSyncStatus,
   HostSshCredential,
@@ -64,6 +71,16 @@ import {
   type SshGeneratedKeyPair,
   type SshKeyDetails,
   type HostStateSnapshot,
+  type HerdSessionMetadata as NativeHerdSessionMetadata,
+  type HerdView as NativeHerdView,
+  type HostProfileRecord as NativeHostProfileRecord,
+  type HostProfileStoreLike,
+  type HostProfileStoreView as NativeHostProfileStoreView,
+  type HostKeyChallenge as NativeHostKeyChallenge,
+  type KnownHostMutation as NativeKnownHostMutation,
+  type KnownHostRecord as NativeKnownHostRecord,
+  type KnownHostStoreLike,
+  type KnownHostStoreView as NativeKnownHostStoreView,
   type HostLatencyMeasurement as NativeHostLatencyMeasurement,
   type RuntimeDiagnostic as NativeRuntimeDiagnostic,
   type GitDiff as NativeGitDiff,
@@ -78,6 +95,8 @@ import {
   type AgentTranscriptMessage,
   type AgentTranscriptState,
   type AgentTranscriptTurn,
+  type AppCoreLike,
+  type AppCoreView as NativeAppCoreView,
 } from './generated-entry';
 
 export interface HerdrBridgeEvent {
@@ -301,12 +320,20 @@ export type RuntimeTabLaunchFailure = Error & {
 };
 export type RuntimeTerminalState = 'opening' | 'attached' | 'restoring' | 'closed' | 'failed';
 
+export type RuntimeAgentStatusTransition = {
+  paneId: string;
+  previous?: 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
+  current?: 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
+  revision: number;
+};
+
 export type RuntimeLifecycleEvent =
   | { type: 'connection-state'; state: RuntimeConnectionState; generation: number; reconnectAttempt: number; error?: string }
   | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
   | { type: 'reconnected'; generation: number; restoredTerminals: number }
   | { type: 'terminal-state'; terminalId: string; state: RuntimeTerminalState; reconnectAttempt: number; retrying: boolean; error?: string }
-  | { type: 'host-state'; state: RuntimeHostState; changedAgentPaneIds: string[] }
+  | { type: 'host-state'; state: RuntimeHostState; agentStatusTransitions: RuntimeAgentStatusTransition[] }
+  | { type: 'latency-measured'; measurement: RuntimeHostLatencyMeasurement }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
@@ -616,6 +643,185 @@ export type RuntimeHostState = {
   focus: { workspaceId?: string; tabId?: string; paneId?: string };
   snapshot?: WhipHostSnapshot;
 };
+
+export type AppSessionProjection = {
+  id: string;
+  hostId: string;
+  connectionStatus:
+    | 'connecting'
+    | 'connected'
+    | 'ready'
+    | 'reconnecting'
+    | 'disconnected'
+    | 'error';
+  connectionError?: string;
+  reconnectAttempt: number;
+  selection: {
+    workspaceId?: string;
+    tabId?: string;
+    paneId?: string;
+  };
+  hostState?: RuntimeHostState;
+  terminalRail: AppTerminalRailProjection;
+};
+
+export type AppTerminalEntryProjection = {
+  terminalId: string;
+  paneId: string;
+  title: string;
+  kind: 'herdr' | 'ssh';
+  status: 'connecting' | 'connected' | 'disconnected' | 'error';
+  error?: string;
+  reconnectAttempt: number;
+};
+
+export type AppTerminalRailProjection = {
+  terminals: AppTerminalEntryProjection[];
+  activeTerminalId?: string;
+};
+
+export type AppCoreProjection = {
+  revision: number;
+  sessions: AppSessionProjection[];
+  activeSessionId?: string;
+};
+
+export type HerdSessionMetadata = NativeHerdSessionMetadata;
+
+export type HerdHostProjection = {
+  id: string;
+  label: string;
+  address: string;
+  connected: boolean;
+  running: boolean;
+  refreshing: boolean;
+  agentStatus: WhipAgentStatus;
+  agents: WhipAgentInfo[];
+  workspaces: WhipWorkspaceInfo[];
+  tabs: WhipTabInfo[];
+};
+
+export type HerdAgentProjection = {
+  hostId: string;
+  hostLabel: string;
+  agent: WhipAgentInfo;
+  workspaceLabel: string;
+  tabLabel: string;
+  primaryLabel: string;
+};
+
+export type HerdProjection = {
+  revision: number;
+  selectedHostId?: string;
+  selectedWorkspaceId?: string;
+  hosts: HerdHostProjection[];
+  agents: HerdAgentProjection[];
+};
+
+function herdProjection(value: NativeHerdView): HerdProjection {
+  return {
+    revision: Number(value.revision),
+    selectedHostId: value.selectedHostId,
+    selectedWorkspaceId: value.selectedWorkspaceId,
+    hosts: value.hosts.map(host => ({
+      id: host.id,
+      label: host.label,
+      address: host.address,
+      connected: host.connected,
+      running: host.running,
+      refreshing: host.refreshing,
+      agentStatus: agentStatus(host.agentStatus),
+      agents: host.agents.map(agent),
+      workspaces: host.workspaces.map(workspace),
+      tabs: host.tabs.map(tab),
+    })),
+    agents: value.agents.map(item => ({
+      hostId: item.hostId,
+      hostLabel: item.hostLabel,
+      agent: agent(item.agent),
+      workspaceLabel: item.workspaceLabel,
+      tabLabel: item.tabLabel,
+      primaryLabel: item.primaryLabel,
+    })),
+  };
+}
+
+export type NativeHostProfile = {
+  id: string;
+  name: string;
+  host: string;
+  port: string;
+  username: string;
+  jumpHostId?: string;
+  forwardAgent: boolean;
+  authMode: 'password' | 'key';
+  herdrCommand: string;
+  herdrSocketPath: string;
+  sessionName: string;
+  createdAt: string;
+  updatedAt: string;
+  lastConnectedAt?: string;
+};
+
+export type HostProfileStoreProjection = {
+  revision: number;
+  hosts: NativeHostProfile[];
+  persistedValue: string;
+};
+
+function nativeHostProfile(value: NativeHostProfileRecord): NativeHostProfile {
+  return {
+    ...value,
+    authMode: value.authMode === HostAuthMode.Key ? 'key' : 'password',
+  };
+}
+
+function rustHostProfile(value: NativeHostProfile): NativeHostProfileRecord {
+  return {
+    ...value,
+    authMode: value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
+  };
+}
+
+function hostProfileStoreProjection(
+  value: NativeHostProfileStoreView,
+): HostProfileStoreProjection {
+  return {
+    revision: Number(value.revision),
+    hosts: value.hosts.map(nativeHostProfile),
+    persistedValue: value.persistedValue,
+  };
+}
+
+export type KnownHostRecord = NativeKnownHostRecord;
+
+export type KnownHostStoreView = {
+  revision: number;
+  hosts: KnownHostRecord[];
+  persistedValue: string;
+};
+
+export type KnownHostMutation = {
+  token: bigint;
+  changed: boolean;
+  view: KnownHostStoreView;
+};
+
+function knownHostStoreView(value: NativeKnownHostStoreView): KnownHostStoreView {
+  return {
+    revision: Number(value.revision),
+    hosts: value.hosts,
+    persistedValue: value.persistedValue,
+  };
+}
+
+function knownHostMutation(value: NativeKnownHostMutation): KnownHostMutation {
+  return {
+    token: value.token,
+    changed: value.changed,
+    view: knownHostStoreView(value.view),
+  };
+}
 
 function runtimeSshConfig(value: RuntimeSshConfig) {
   return {
@@ -1403,6 +1609,72 @@ function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
   };
 }
 
+function appConnectionStatus(
+  value: AppConnectionStatus,
+): AppSessionProjection['connectionStatus'] {
+  switch (value) {
+    case AppConnectionStatus.Connecting: return 'connecting';
+    case AppConnectionStatus.Connected: return 'connected';
+    case AppConnectionStatus.Ready: return 'ready';
+    case AppConnectionStatus.Reconnecting: return 'reconnecting';
+    case AppConnectionStatus.Disconnected: return 'disconnected';
+    case AppConnectionStatus.Error: return 'error';
+  }
+}
+
+function nativeAppConnectionStatus(
+  value: AppSessionProjection['connectionStatus'],
+): AppConnectionStatus {
+  switch (value) {
+    case 'connecting': return AppConnectionStatus.Connecting;
+    case 'connected': return AppConnectionStatus.Connected;
+    case 'ready': return AppConnectionStatus.Ready;
+    case 'reconnecting': return AppConnectionStatus.Reconnecting;
+    case 'disconnected': return AppConnectionStatus.Disconnected;
+    case 'error': return AppConnectionStatus.Error;
+  }
+}
+
+function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
+  return {
+    revision: Number(value.revision),
+    sessions: value.sessions.map(session => ({
+      id: session.id,
+      hostId: session.hostId,
+      connectionStatus: appConnectionStatus(session.connectionStatus),
+      connectionError: session.connectionError,
+      reconnectAttempt: session.reconnectAttempt,
+      selection: {
+        workspaceId: session.selection.workspaceId,
+        tabId: session.selection.tabId,
+        paneId: session.selection.paneId,
+      },
+      hostState: session.hostState
+        ? runtimeHostState(session.hostState)
+        : undefined,
+      terminalRail: {
+        terminals: session.terminalRail.terminals.map(terminal => ({
+          terminalId: terminal.terminalId,
+          paneId: terminal.paneId,
+          title: terminal.title,
+          kind: terminal.kind === TerminalKind.Ssh ? 'ssh' : 'herdr',
+          status: terminal.state === TerminalUiState.Connecting
+            ? 'connecting'
+            : terminal.state === TerminalUiState.Connected
+              ? 'connected'
+              : terminal.state === TerminalUiState.Error
+                ? 'error'
+                : 'disconnected',
+          error: terminal.error,
+          reconnectAttempt: terminal.reconnectAttempt,
+        })),
+        activeTerminalId: session.terminalRail.activeTerminalId,
+      },
+    })),
+    activeSessionId: value.activeSessionId,
+  };
+}
+
 function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
   switch (value.tag) {
     case HerdrControlResult_Tags.Pong:
@@ -1559,7 +1831,24 @@ const hostRuntimeEventSink = {
         handler({
           type: 'host-state',
           state: runtimeHostState(inner.state),
-          changedAgentPaneIds: [...inner.changedAgentPaneIds],
+          agentStatusTransitions: inner.agentStatusTransitions.map(
+            transition => ({
+              paneId: transition.paneId,
+              previous: transition.previous === undefined
+                ? undefined
+                : agentStatus(transition.previous),
+              current: transition.current === undefined
+                ? undefined
+                : agentStatus(transition.current),
+              revision: Number(transition.revision),
+            }),
+          ),
+        });
+        break;
+      case HostRuntimeEvent_Tags.LatencyMeasured:
+        handler({
+          type: 'latency-measured',
+          measurement: runtimeHostLatency(inner.measurement),
         });
         break;
       case HostRuntimeEvent_Tags.EventSubscriptionClosed:
@@ -1629,6 +1918,14 @@ export class NativeHostRuntime {
       });
       throw normalized;
     }
+  }
+
+  setMonitoringState(
+    appActive: boolean,
+    hostsVisible: boolean,
+    accessLocked: boolean,
+  ): void {
+    this.runtime.setMonitoringState(appActive, hostsVisible, accessLocked);
   }
 
   async createTabWithLaunch(
@@ -1707,6 +2004,11 @@ export class NativeHostRuntime {
   status() { return this.runtime.status(); }
 
   hostState(): RuntimeHostState { return runtimeHostState(this.runtime.hostState()); }
+
+  /** Bind this runtime to Rust-owned application state without exposing its raw handle. */
+  attachToAppCore(core: AppCoreLike, sessionId: string): NativeAppCoreView {
+    return core.attachRuntime(sessionId, this.runtime);
+  }
 
   async refreshState(): Promise<RuntimeHostState> {
     return runtimeHostState(await this.runtime.refreshState());
@@ -2017,6 +2319,213 @@ export class NativeHostRuntime {
 
   stopPreview(previewId: string): Promise<void> { return this.runtime.stopPreview(previewId); }
 
+}
+
+/** Rust-owned application/session state with a React-friendly typed projection. */
+export class NativeAppCore {
+  private readonly core: AppCoreLike = new RustAppCore();
+
+  view(): AppCoreProjection {
+    return appCoreProjection(this.core.view());
+  }
+
+  herdView(
+    metadata: HerdSessionMetadata[],
+    requestedHostId?: string,
+    requestedWorkspaceId?: string,
+  ): HerdProjection {
+    return herdProjection(this.core.herdView(
+      metadata,
+      requestedHostId,
+      requestedWorkspaceId,
+    ));
+  }
+
+  openSession(
+    sessionId: string,
+    hostId: string,
+    activate = true,
+  ): AppCoreProjection {
+    return appCoreProjection(this.core.openSession(sessionId, hostId, activate));
+  }
+
+  attachRuntime(
+    sessionId: string,
+    runtime: NativeHostRuntime,
+  ): AppCoreProjection {
+    return appCoreProjection(runtime.attachToAppCore(this.core, sessionId));
+  }
+
+  detachRuntime(sessionId: string): AppCoreProjection {
+    return appCoreProjection(this.core.detachRuntime(sessionId));
+  }
+
+  setPlaceholderConnection(
+    sessionId: string,
+    status: AppSessionProjection['connectionStatus'],
+    error?: string,
+    reconnectAttempt?: number,
+  ): AppCoreProjection {
+    return appCoreProjection(this.core.setPlaceholderConnection(
+      sessionId,
+      nativeAppConnectionStatus(status),
+      error,
+      reconnectAttempt,
+    ));
+  }
+
+  selectSession(sessionId: string): AppCoreProjection {
+    return appCoreProjection(this.core.selectSession(sessionId));
+  }
+
+  selectHost(hostId: string): AppCoreProjection {
+    return appCoreProjection(this.core.selectHost(hostId));
+  }
+
+  closeSession(sessionId: string): AppCoreProjection {
+    return appCoreProjection(this.core.closeSession(sessionId));
+  }
+
+  selectWorkspaceView(
+    sessionId: string,
+    workspaceId: string,
+  ): AppCoreProjection {
+    return appCoreProjection(
+      this.core.selectWorkspaceView(sessionId, workspaceId),
+    );
+  }
+
+  restoreTerminals(
+    sessionId: string,
+    terminalIds: string[],
+    activeTerminalId?: string,
+  ): AppCoreProjection {
+    return appCoreProjection(
+      this.core.restoreTerminals(sessionId, terminalIds, activeTerminalId),
+    );
+  }
+
+  openPaneTerminal(sessionId: string, paneId: string): AppCoreProjection {
+    return appCoreProjection(this.core.openPaneTerminal(sessionId, paneId));
+  }
+
+  openSshShell(sessionId: string, title: string): AppCoreProjection {
+    return appCoreProjection(this.core.openSshShell(sessionId, title));
+  }
+
+  closeTerminal(sessionId: string, terminalId: string): AppCoreProjection {
+    return appCoreProjection(this.core.closeTerminal(sessionId, terminalId));
+  }
+
+  updateTerminalLifecycle(
+    sessionId: string,
+    terminalId: string,
+    state: RuntimeTerminalState,
+    retrying: boolean,
+    error?: string,
+    reconnectAttempt = 0,
+  ): AppCoreProjection {
+    const nativeState = state === 'opening'
+      ? HostTerminalState.Opening
+      : state === 'attached'
+        ? HostTerminalState.Attached
+        : state === 'restoring'
+          ? HostTerminalState.Restoring
+          : state === 'failed'
+            ? HostTerminalState.Failed
+            : HostTerminalState.Closed;
+    return appCoreProjection(this.core.updateTerminalLifecycle(
+      sessionId,
+      terminalId,
+      nativeState,
+      retrying,
+      error,
+      reconnectAttempt,
+    ));
+  }
+}
+
+/** Canonical Rust known-host domain store; JS only persists prepared values. */
+export class NativeKnownHostStore {
+  private readonly store: KnownHostStoreLike = new RustKnownHostStore();
+
+  hydrate(persisted?: string): KnownHostStoreView {
+    return knownHostStoreView(this.store.hydrate(persisted));
+  }
+
+  view(): KnownHostStoreView {
+    return knownHostStoreView(this.store.view());
+  }
+
+  prepareAdd(
+    challenge: NativeHostKeyChallenge,
+    id: string,
+    createdAt: string,
+  ): KnownHostMutation {
+    return knownHostMutation(this.store.prepareAdd(challenge, id, createdAt));
+  }
+
+  prepareRemove(id: string): KnownHostMutation {
+    return knownHostMutation(this.store.prepareRemove(id));
+  }
+
+  commit(token: bigint): KnownHostStoreView {
+    return knownHostStoreView(this.store.commit(token));
+  }
+
+  rollback(token: bigint): KnownHostStoreView {
+    return knownHostStoreView(this.store.rollback(token));
+  }
+}
+
+/** Canonical Rust host metadata and jump-host graph; secrets never enter it. */
+export class NativeHostProfileStore {
+  private readonly store: HostProfileStoreLike = new RustHostProfileStore();
+
+  hydrate(persisted?: string): HostProfileStoreProjection {
+    return hostProfileStoreProjection(this.store.hydrate(persisted));
+  }
+
+  view(): HostProfileStoreProjection {
+    return hostProfileStoreProjection(this.store.view());
+  }
+
+  normalizeProfile(
+    profile: NativeHostProfile,
+    previousCreatedAt: string | undefined,
+    now: string,
+  ): NativeHostProfile {
+    return nativeHostProfile(this.store.normalizeProfile(
+      rustHostProfile(profile),
+      previousCreatedAt,
+      now,
+    ));
+  }
+
+  upsert(profile: NativeHostProfile, now: string): HostProfileStoreProjection {
+    return hostProfileStoreProjection(this.store.upsert(rustHostProfile(profile), now));
+  }
+
+  markDisconnected(id: string, now: string): HostProfileStoreProjection {
+    return hostProfileStoreProjection(this.store.markDisconnected(id, now));
+  }
+
+  remove(id: string, now: string): HostProfileStoreProjection {
+    return hostProfileStoreProjection(this.store.remove(id, now));
+  }
+
+  resolveJumpChain(profileId: string, jumpHostId?: string): NativeHostProfile[] {
+    return this.store.resolveJumpChain(profileId, jumpHostId).map(nativeHostProfile);
+  }
+
+  jumpCandidates(profileId: string): NativeHostProfile[] {
+    return this.store.jumpCandidates(profileId).map(nativeHostProfile);
+  }
+
+  migrateLegacy(persisted: string, now: string): NativeHostProfile | undefined {
+    const profile = this.store.migrateLegacy(persisted, now);
+    return profile && nativeHostProfile(profile);
+  }
 }
 
 export type HostRuntimeConnection = NativeHostRuntime;

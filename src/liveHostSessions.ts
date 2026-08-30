@@ -1,4 +1,8 @@
-import type { HostRuntimeState } from 'react-native-whip-ssh';
+import type {
+  AppCoreProjection,
+  HostRuntimeState,
+} from 'react-native-whip-ssh';
+
 import type {
   HerdrSnapshot,
   HostProfile,
@@ -15,7 +19,12 @@ export type LiveHostConnectionStatus =
   | 'disconnected'
   | 'error';
 
-export type LiveHostSyncStatus = 'idle' | 'syncing' | 'synced' | 'stale' | 'error';
+export type LiveHostSyncStatus =
+  | 'idle'
+  | 'syncing'
+  | 'synced'
+  | 'stale'
+  | 'error';
 
 export interface LiveHostSelection {
   workspaceId: string | null;
@@ -25,9 +34,7 @@ export interface LiveHostSelection {
 
 export interface LiveHostSyncState {
   status: LiveHostSyncStatus;
-  /** Rust-owned snapshot synchronization generation. */
   generation: number;
-  /** Rust-owned connection generation and domain-state revision. */
   connectionGeneration: number;
   revision: number;
   freshness: HostRuntimeState['freshness'];
@@ -52,23 +59,10 @@ export interface LiveHostSessionsState {
   activeSessionId: string | null;
 }
 
-export interface LiveHostConnectionUpdate {
-  status: LiveHostConnectionStatus;
-  error?: string | null;
-  reconnectAttempt?: number;
-}
-
 export const emptyLiveHostSessions: LiveHostSessionsState = {
   sessions: [],
   activeSessionId: null,
 };
-
-/** A connecting host has no usable control channel for snapshot refreshes yet. */
-export function canRefreshLiveHostSession(
-  session: LiveHostSession | null | undefined,
-): session is LiveHostSession {
-  return Boolean(session && session.status !== 'connecting');
-}
 
 export function createEmptyHerdrSnapshot(): HerdrSnapshot {
   return {
@@ -84,213 +78,99 @@ export function createEmptyHerdrSnapshot(): HerdrSnapshot {
   };
 }
 
-export function createLiveHostSession(
-  host: HostProfile,
-  sessionId = host.id,
-): LiveHostSession {
-  return {
-    id: sessionId,
-    hostId: host.id,
-    host,
-    status: 'connecting',
-    connectionError: null,
-    reconnectAttempt: 0,
-    snapshot: createEmptyHerdrSnapshot(),
-    sync: {
-      status: 'idle',
-      generation: 0,
-      connectionGeneration: 0,
-      revision: 0,
-      freshness: 'loading',
-      error: null,
-      lastSyncedAt: null,
-    },
-    selection: {
-      workspaceId: null,
-      tabId: null,
-      paneId: null,
-    },
-  };
-}
-
-/** Add a live host to the outer session rail and make it active. */
-export function openLiveHostSession(
-  state: LiveHostSessionsState,
-  host: HostProfile,
-  sessionId = host.id,
-  activate = true,
-): LiveHostSessionsState {
-  const existing = state.sessions.find(session => session.id === sessionId);
-  if (existing) {
-    return {
-      sessions: state.sessions.map(session => session.id === sessionId
-        ? {
-          ...session,
-          hostId: host.id,
-          host,
-          status: 'connecting',
-          connectionError: null,
-          reconnectAttempt: 0,
-        }
-        : session),
-      activeSessionId: activate ? sessionId : state.activeSessionId,
-    };
-  }
-
-  return {
-    sessions: [...state.sessions, createLiveHostSession(host, sessionId)],
-    activeSessionId: activate ? sessionId : state.activeSessionId,
-  };
-}
-
-export function selectLiveHostSession(
-  state: LiveHostSessionsState,
-  sessionId: string,
-): LiveHostSessionsState {
-  if (state.activeSessionId === sessionId) return state;
-  return state.sessions.some(session => session.id === sessionId)
-    ? { ...state, activeSessionId: sessionId }
-    : state;
-}
-
-/** Select the newest live session for a saved host. */
-export function selectLiveHost(
-  state: LiveHostSessionsState,
-  hostId: string,
-): LiveHostSessionsState {
-  const session = [...state.sessions].reverse().find(item => item.hostId === hostId);
-  return session ? selectLiveHostSession(state, session.id) : state;
-}
-
 /**
- * Remove one host session. Matching the session rail, closing the active
- * session selects the last surviving rail item instead of disconnecting any
- * other host.
+ * Mechanical React render-cache projection. All session transitions and
+ * selection repair have already happened in Rust AppCore.
  */
-export function closeLiveHostSession(
-  state: LiveHostSessionsState,
-  sessionId: string,
+export function projectAppCoreSessions(
+  core: AppCoreProjection,
+  profiles: ReadonlyMap<string, HostProfile>,
+  previous: LiveHostSessionsState,
+  snapshotFromHostState: (
+    sessionId: string,
+    state: HostRuntimeState,
+  ) => HerdrSnapshot,
 ): LiveHostSessionsState {
-  if (!state.sessions.some(session => session.id === sessionId)) return state;
-  const sessions = state.sessions.filter(session => session.id !== sessionId);
   return {
-    sessions,
-    activeSessionId: state.activeSessionId === sessionId
-      ? sessions[sessions.length - 1]?.id ?? null
-      : state.activeSessionId,
+    sessions: core.sessions.map(nativeSession => {
+      const previousSession = previous.sessions.find(
+        session => session.id === nativeSession.id,
+      );
+      const host = profiles.get(nativeSession.hostId) ?? previousSession?.host;
+      if (!host) {
+        throw new Error(
+          `Rust AppCore projected unknown host ${nativeSession.hostId}`,
+        );
+      }
+      const nativeState = nativeSession.hostState;
+      const snapshot = nativeState
+        ? snapshotFromHostState(nativeSession.id, nativeState)
+        : previousSession?.snapshot ?? createEmptyHerdrSnapshot();
+      return {
+        id: nativeSession.id,
+        hostId: nativeSession.hostId,
+        host,
+        status: nativeSession.connectionStatus,
+        connectionError: nativeSession.connectionError ?? null,
+        reconnectAttempt: nativeSession.reconnectAttempt,
+        snapshot,
+        sync: nativeState
+          ? syncProjection(nativeState, previousSession?.sync)
+          : previousSession?.sync ?? emptySyncState(),
+        selection: {
+          workspaceId: nativeSession.selection.workspaceId ?? null,
+          tabId: nativeSession.selection.tabId ?? null,
+          paneId: nativeSession.selection.paneId ?? null,
+        },
+      };
+    }),
+    activeSessionId: core.activeSessionId ?? null,
   };
 }
 
-export function updateLiveHostConnection(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  update: LiveHostConnectionUpdate,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const connectionError = update.error !== undefined
-      ? update.error
-      : update.status === 'ready'
-        || update.status === 'connected'
-        || update.status === 'connecting'
-        ? null
-        : session.connectionError;
-    const reconnectAttempt = update.reconnectAttempt
-      ?? (update.status === 'ready' || update.status === 'connected'
-        ? 0
-        : session.reconnectAttempt);
-    if (
-      session.status === update.status
-      && session.connectionError === connectionError
-      && session.reconnectAttempt === reconnectAttempt
-    ) {
-      return session;
-    }
-
-    return {
-      ...session,
-      status: update.status,
-      connectionError,
-      reconnectAttempt,
-    };
-  });
+function emptySyncState(): LiveHostSyncState {
+  return {
+    status: 'idle',
+    generation: 0,
+    connectionGeneration: 0,
+    revision: 0,
+    freshness: 'loading',
+    error: null,
+    lastSyncedAt: null,
+  };
 }
 
-/**
- * Replace the React render cache with a newer Rust-owned HostState projection.
- * No Herdr event or snapshot reconciliation occurs in TypeScript.
- */
-export function applyNativeHostState(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  nativeState: HostRuntimeState,
-  snapshot: HerdrSnapshot,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    if (nativeState.revision <= session.sync.revision) return session;
-    const selection = validUiSelection(snapshot, session.selection)
-      ? session.selection
-      : serverFocusSelection(snapshot);
-    const status: LiveHostSyncStatus = nativeState.syncStatus === 'error'
-      ? 'error'
-      : nativeState.syncStatus === 'syncing'
-        ? 'syncing'
-        : nativeState.freshness === 'fresh'
-          ? 'synced'
-          : nativeState.freshness === 'stale'
-            ? 'stale'
-            : 'idle';
-    return {
-      ...session,
-      snapshot,
-      selection,
-      sync: {
-        ...session.sync,
-        status,
-        generation: nativeState.syncGeneration,
-        connectionGeneration: nativeState.connectionGeneration,
-        revision: nativeState.revision,
-        freshness: nativeState.freshness,
-        error: nativeState.error ?? null,
-        lastSyncedAt: nativeState.lastSyncedAtMs
-          ? new Date(nativeState.lastSyncedAtMs).toISOString()
-          : session.sync.lastSyncedAt,
-      },
-    };
-  });
+function syncProjection(
+  state: HostRuntimeState,
+  previous?: LiveHostSyncState,
+): LiveHostSyncState {
+  const status: LiveHostSyncStatus = state.syncStatus === 'error'
+    ? 'error'
+    : state.syncStatus === 'syncing'
+      ? 'syncing'
+      : state.freshness === 'fresh'
+        ? 'synced'
+        : state.freshness === 'stale'
+          ? 'stale'
+          : 'idle';
+  return {
+    status,
+    generation: state.syncGeneration,
+    connectionGeneration: state.connectionGeneration,
+    revision: state.revision,
+    freshness: state.freshness,
+    error: state.error ?? null,
+    lastSyncedAt: state.lastSyncedAtMs
+      ? new Date(state.lastSyncedAtMs).toISOString()
+      : previous?.lastSyncedAt ?? null,
+  };
 }
 
-/** Mobile-only selection; this never changes Herdr's authoritative focus. */
-export function selectLiveHostWorkspaceView(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  workspaceId: string,
-): LiveHostSessionsState {
-  return updateSession(state, sessionId, session => {
-    const pane = preferredWorkspacePane(session.snapshot, workspaceId);
-    const workspace = session.snapshot.workspaces.find(item => item.workspace_id === workspaceId);
-    if (!workspace) return session;
-    const selection: LiveHostSelection = {
-      workspaceId,
-      tabId: pane?.tab_id ?? workspace.active_tab_id ?? null,
-      paneId: pane?.pane_id ?? null,
-    };
-    return session.selection.workspaceId === selection.workspaceId
-      && session.selection.tabId === selection.tabId
-      && session.selection.paneId === selection.paneId
-      ? session
-      : { ...session, selection };
-  });
-}
-
-/** Resolve the terminal pane Herdr considers active for a workspace. */
-export function preferredWorkspacePane(
-  snapshot: HerdrSnapshot,
-  workspaceId: string,
-): PaneInfo | undefined {
-  const workspace = snapshot.workspaces.find(item => item.workspace_id === workspaceId);
-  if (!workspace) return undefined;
-  const tab = preferredTab(snapshot, workspace);
-  return tab ? preferredPane(snapshot, tab) : undefined;
+/** A connecting host has no usable control channel for snapshot refreshes yet. */
+export function canRefreshLiveHostSession(
+  session: LiveHostSession | null | undefined,
+): session is LiveHostSession {
+  return Boolean(session && session.status !== 'connecting');
 }
 
 export function findLiveHostSession(
@@ -307,65 +187,38 @@ export function getActiveLiveHostSession(
   return findLiveHostSession(state, state.activeSessionId) ?? null;
 }
 
-function updateSession(
-  state: LiveHostSessionsState,
-  sessionId: string,
-  updater: (session: LiveHostSession) => LiveHostSession,
-): LiveHostSessionsState {
-  const index = state.sessions.findIndex(session => session.id === sessionId);
-  if (index < 0) return state;
-  const current = state.sessions[index];
-  const next = updater(current);
-  if (next === current) return state;
-  const sessions = [...state.sessions];
-  sessions[index] = next;
-  return { ...state, sessions };
+/**
+ * Temporary command-result projection used by imperative focus flows. The
+ * durable UI selection itself is owned and validated by Rust AppCore.
+ */
+export function preferredWorkspacePane(
+  snapshot: HerdrSnapshot,
+  workspaceId: string,
+): PaneInfo | undefined {
+  const workspace = snapshot.workspaces.find(
+    item => item.workspace_id === workspaceId,
+  );
+  if (!workspace) return undefined;
+  const tab = preferredTab(snapshot, workspace);
+  return tab ? preferredPane(snapshot, tab) : undefined;
 }
 
-function serverFocusSelection(snapshot: HerdrSnapshot): LiveHostSelection {
-  const workspace = snapshot.workspaces.find(item => item.workspace_id === snapshot.focused_workspace_id)
-    ?? snapshot.workspaces.find(item => item.focused)
-    ?? snapshot.workspaces[0];
-  if (!workspace) return { workspaceId: null, tabId: null, paneId: null };
-
-  const tab = snapshot.tabs.find(item => (
-    item.tab_id === snapshot.focused_tab_id && item.workspace_id === workspace.workspace_id
-  )) ?? preferredTab(snapshot, workspace);
-  if (!tab) return { workspaceId: workspace.workspace_id, tabId: null, paneId: null };
-
-  const pane = snapshot.panes.find(item => (
-    item.pane_id === snapshot.focused_pane_id && item.tab_id === tab.tab_id
-  )) ?? preferredPane(snapshot, tab);
-  return {
-    workspaceId: workspace.workspace_id,
-    tabId: tab.tab_id,
-    paneId: pane?.pane_id ?? null,
-  };
-}
-
-function validUiSelection(snapshot: HerdrSnapshot, selection: LiveHostSelection): boolean {
-  if (!selection.workspaceId) return snapshot.workspaces.length === 0;
-  const workspace = snapshot.workspaces.find(item => item.workspace_id === selection.workspaceId);
-  if (!workspace) return false;
-  if (!selection.tabId) return !snapshot.tabs.some(item => item.workspace_id === workspace.workspace_id);
-  const tab = snapshot.tabs.find(item => (
-    item.tab_id === selection.tabId && item.workspace_id === workspace.workspace_id
-  ));
-  if (!tab) return false;
-  if (!selection.paneId) return !snapshot.panes.some(item => item.tab_id === tab.tab_id);
-  return snapshot.panes.some(item => (
-    item.pane_id === selection.paneId && item.tab_id === tab.tab_id
-  ));
-}
-
-function preferredTab(snapshot: HerdrSnapshot, workspace: WorkspaceInfo): TabInfo | undefined {
-  const tabs = snapshot.tabs.filter(item => item.workspace_id === workspace.workspace_id);
+function preferredTab(
+  snapshot: HerdrSnapshot,
+  workspace: WorkspaceInfo,
+): TabInfo | undefined {
+  const tabs = snapshot.tabs.filter(
+    item => item.workspace_id === workspace.workspace_id,
+  );
   return tabs.find(item => item.tab_id === workspace.active_tab_id)
     ?? tabs.find(item => item.focused)
     ?? tabs[0];
 }
 
-function preferredPane(snapshot: HerdrSnapshot, tab: TabInfo): PaneInfo | undefined {
+function preferredPane(
+  snapshot: HerdrSnapshot,
+  tab: TabInfo,
+): PaneInfo | undefined {
   const panes = snapshot.panes.filter(item => item.tab_id === tab.tab_id);
   return panes.find(item => item.focused) ?? panes[0];
 }

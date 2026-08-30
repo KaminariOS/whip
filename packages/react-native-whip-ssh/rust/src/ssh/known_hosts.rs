@@ -3,7 +3,10 @@
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use russh::keys::PublicKey;
-use serde::Serialize;
+use std::sync::Arc;
+
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
@@ -47,6 +50,283 @@ pub enum KnownHostStoreError {
     MalformedKey(String),
     #[error("trusted host key type {0} does not match decoded key type {1}")]
     KeyTypeMismatch(String, String),
+    #[error("known-host id is empty")]
+    EmptyId,
+    #[error("known-host fingerprint is empty")]
+    EmptyFingerprint,
+    #[error("known-host creation timestamp is empty")]
+    EmptyCreatedAt,
+    #[error("persisted known-host data is malformed: {0}")]
+    MalformedPersistedData(String),
+    #[error("known-host mutation {0} is not active")]
+    InvalidMutation(u64),
+    #[error("known-host mutation {0} must be persisted or rolled back first")]
+    MutationInProgress(u64),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHostRecord {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub public_key: String,
+    pub fingerprint: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct KnownHostStoreView {
+    pub revision: u64,
+    pub hosts: Vec<KnownHostRecord>,
+    pub persisted_value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct KnownHostMutation {
+    pub token: u64,
+    pub changed: bool,
+    pub view: KnownHostStoreView,
+}
+
+#[derive(Debug)]
+struct PendingKnownHostMutation {
+    token: u64,
+    hosts: Vec<KnownHostRecord>,
+}
+
+#[derive(Debug, Default)]
+struct KnownHostDomainState {
+    revision: u64,
+    next_token: u64,
+    hosts: Vec<KnownHostRecord>,
+    pending: Option<PendingKnownHostMutation>,
+}
+
+#[derive(uniffi::Object)]
+pub struct KnownHostStore {
+    state: Mutex<KnownHostDomainState>,
+}
+
+#[uniffi::export]
+impl KnownHostStore {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            state: Mutex::new(KnownHostDomainState::default()),
+        })
+    }
+
+    pub fn hydrate(
+        &self,
+        persisted: Option<String>,
+    ) -> Result<KnownHostStoreView, KnownHostStoreError> {
+        let hosts = persisted.map_or_else(
+            || Ok(Vec::new()),
+            |value| {
+                serde_json::from_str::<Vec<KnownHostRecord>>(&value)
+                    .map_err(|error| KnownHostStoreError::MalformedPersistedData(error.to_string()))
+            },
+        )?;
+        let hosts = normalize_records(hosts)?;
+        install_records(&hosts)?;
+        let mut state = self.state.lock();
+        state.hosts = hosts;
+        state.pending = None;
+        state.revision = state.revision.saturating_add(1);
+        view(&state.hosts, state.revision)
+    }
+
+    pub fn view(&self) -> Result<KnownHostStoreView, KnownHostStoreError> {
+        let state = self.state.lock();
+        view(&state.hosts, state.revision)
+    }
+
+    pub fn prepare_add(
+        &self,
+        challenge: HostKeyChallenge,
+        id: String,
+        created_at: String,
+    ) -> Result<KnownHostMutation, KnownHostStoreError> {
+        let mut state = self.state.lock();
+        ensure_no_pending(&state)?;
+        let candidate = normalize_record(KnownHostRecord {
+            id,
+            host: challenge.host,
+            port: challenge.port,
+            key_type: challenge.key_type,
+            public_key: challenge.public_key,
+            fingerprint: challenge.fingerprint,
+            created_at,
+        })?;
+        if state.hosts.iter().any(|host| duplicate(host, &candidate)) {
+            return Ok(KnownHostMutation {
+                token: 0,
+                changed: false,
+                view: view(&state.hosts, state.revision)?,
+            });
+        }
+        let mut hosts = state.hosts.clone();
+        hosts.push(candidate);
+        let hosts = normalize_records(hosts)?;
+        validate_records(&hosts)?;
+        state.next_token = state.next_token.saturating_add(1).max(1);
+        let token = state.next_token;
+        let mutation_view = view(&hosts, state.revision.saturating_add(1))?;
+        state.pending = Some(PendingKnownHostMutation { token, hosts });
+        let mutation = KnownHostMutation {
+            token,
+            changed: true,
+            view: mutation_view,
+        };
+        drop(state);
+        Ok(mutation)
+    }
+
+    pub fn prepare_remove(&self, id: String) -> Result<KnownHostMutation, KnownHostStoreError> {
+        let mut state = self.state.lock();
+        ensure_no_pending(&state)?;
+        let hosts = state
+            .hosts
+            .iter()
+            .filter(|host| host.id != id)
+            .cloned()
+            .collect::<Vec<_>>();
+        if hosts.len() == state.hosts.len() {
+            return Ok(KnownHostMutation {
+                token: 0,
+                changed: false,
+                view: view(&state.hosts, state.revision)?,
+            });
+        }
+        validate_records(&hosts)?;
+        state.next_token = state.next_token.saturating_add(1).max(1);
+        let token = state.next_token;
+        let mutation_view = view(&hosts, state.revision.saturating_add(1))?;
+        state.pending = Some(PendingKnownHostMutation { token, hosts });
+        let mutation = KnownHostMutation {
+            token,
+            changed: true,
+            view: mutation_view,
+        };
+        drop(state);
+        Ok(mutation)
+    }
+
+    pub fn commit(&self, token: u64) -> Result<KnownHostStoreView, KnownHostStoreError> {
+        let mut state = self.state.lock();
+        let Some(pending) = state.pending.take() else {
+            return Err(KnownHostStoreError::InvalidMutation(token));
+        };
+        if pending.token != token {
+            state.pending = Some(pending);
+            return Err(KnownHostStoreError::InvalidMutation(token));
+        }
+        if let Err(error) = install_records(&pending.hosts) {
+            state.pending = Some(pending);
+            return Err(error);
+        }
+        state.hosts = pending.hosts;
+        state.revision = state.revision.saturating_add(1);
+        view(&state.hosts, state.revision)
+    }
+
+    pub fn rollback(&self, token: u64) -> Result<KnownHostStoreView, KnownHostStoreError> {
+        let mut state = self.state.lock();
+        if state.pending.as_ref().map(|pending| pending.token) != Some(token) {
+            return Err(KnownHostStoreError::InvalidMutation(token));
+        }
+        state.pending = None;
+        install_records(&state.hosts)?;
+        view(&state.hosts, state.revision)
+    }
+}
+
+fn ensure_no_pending(state: &KnownHostDomainState) -> Result<(), KnownHostStoreError> {
+    state.pending.as_ref().map_or(Ok(()), |pending| {
+        Err(KnownHostStoreError::MutationInProgress(pending.token))
+    })
+}
+
+fn view(
+    hosts: &[KnownHostRecord],
+    revision: u64,
+) -> Result<KnownHostStoreView, KnownHostStoreError> {
+    Ok(KnownHostStoreView {
+        revision,
+        hosts: hosts.to_vec(),
+        persisted_value: serde_json::to_string(hosts)
+            .map_err(|error| KnownHostStoreError::MalformedPersistedData(error.to_string()))?,
+    })
+}
+
+fn normalize_records(
+    hosts: Vec<KnownHostRecord>,
+) -> Result<Vec<KnownHostRecord>, KnownHostStoreError> {
+    let mut normalized = hosts
+        .into_iter()
+        .map(normalize_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    normalized.sort_by(|left, right| {
+        left.host
+            .to_lowercase()
+            .cmp(&right.host.to_lowercase())
+            .then(left.port.cmp(&right.port))
+            .then(left.key_type.cmp(&right.key_type))
+            .then(left.id.cmp(&right.id))
+    });
+    Ok(normalized)
+}
+
+fn normalize_record(mut record: KnownHostRecord) -> Result<KnownHostRecord, KnownHostStoreError> {
+    record.id = record.id.trim().to_owned();
+    if record.id.is_empty() {
+        return Err(KnownHostStoreError::EmptyId);
+    }
+    record.host = record.host.trim().to_owned();
+    normalize_host(&record.host)?;
+    if record.port == 0 {
+        return Err(KnownHostStoreError::InvalidPort(record.port));
+    }
+    record.key_type = record.key_type.trim().to_owned();
+    record.public_key = record.public_key.trim().to_owned();
+    record.fingerprint = record.fingerprint.trim().to_owned();
+    if record.fingerprint.is_empty() {
+        return Err(KnownHostStoreError::EmptyFingerprint);
+    }
+    record.created_at = record.created_at.trim().to_owned();
+    if record.created_at.is_empty() {
+        return Err(KnownHostStoreError::EmptyCreatedAt);
+    }
+    KnownHosts::from_trusted(vec![trusted(&record)])?;
+    Ok(record)
+}
+
+fn trusted(record: &KnownHostRecord) -> TrustedHostKey {
+    TrustedHostKey {
+        host: record.host.clone(),
+        port: record.port,
+        key_type: record.key_type.clone(),
+        public_key: record.public_key.clone(),
+    }
+}
+
+fn install_records(records: &[KnownHostRecord]) -> Result<(), KnownHostStoreError> {
+    let parsed = KnownHosts::from_trusted(records.iter().map(trusted).collect())?;
+    *super::known_hosts().write() = parsed;
+    Ok(())
+}
+
+fn validate_records(records: &[KnownHostRecord]) -> Result<(), KnownHostStoreError> {
+    KnownHosts::from_trusted(records.iter().map(trusted).collect()).map(|_| ())
+}
+
+fn duplicate(left: &KnownHostRecord, right: &KnownHostRecord) -> bool {
+    left.host.eq_ignore_ascii_case(&right.host)
+        && left.port == right.port
+        && left.key_type == right.key_type
+        && left.fingerprint == right.fingerprint
 }
 
 #[derive(Debug)]
@@ -249,6 +529,18 @@ mod tests {
         }
     }
 
+    fn record(id: &str, host: &str, key: &russh::keys::PrivateKey) -> KnownHostRecord {
+        KnownHostRecord {
+            id: id.to_owned(),
+            host: host.to_owned(),
+            port: 22,
+            key_type: key.public_key().algorithm().as_str().to_owned(),
+            public_key: key.public_key().to_openssh().unwrap(),
+            fingerprint: format!("SHA256:{id}"),
+            created_at: "2026-01-01T00:00:00.000Z".to_owned(),
+        }
+    }
+
     #[test]
     fn parser_ignores_comments_and_invalid_lines() {
         let parsed = KnownHosts::parse("# comment\ninvalid\nexample.com ssh-ed25519 AAAA\n");
@@ -353,5 +645,123 @@ mod tests {
             known.check("example.com", 22, received_key.public_key()),
             HostKeyDecision::Changed(_)
         ));
+    }
+
+    #[test]
+    fn canonical_store_hydrates_validates_and_sorts_records() {
+        let first_key = test_key();
+        let second_key = test_key();
+        let store = KnownHostStore::new();
+        let persisted = serde_json::to_string(&vec![
+            record("second", "z.example", &second_key),
+            record("first", "a.example", &first_key),
+        ])
+        .unwrap();
+
+        let view = store.hydrate(Some(persisted)).unwrap();
+
+        assert_eq!(
+            view.hosts
+                .iter()
+                .map(|host| host.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert_eq!(
+            serde_json::from_str::<Vec<KnownHostRecord>>(&view.persisted_value).unwrap(),
+            view.hosts
+        );
+    }
+
+    #[test]
+    fn canonical_store_rejects_malformed_persisted_data() {
+        let store = KnownHostStore::new();
+        assert!(matches!(
+            store.hydrate(Some("{not json".to_owned())),
+            Err(KnownHostStoreError::MalformedPersistedData(_))
+        ));
+    }
+
+    #[test]
+    fn duplicate_add_is_noop_but_same_host_different_key_is_allowed() {
+        let first_key = test_key();
+        let second_key = test_key();
+        let store = KnownHostStore::new();
+        let first = record("first", "same.example", &first_key);
+        store
+            .hydrate(Some(serde_json::to_string(&vec![first.clone()]).unwrap()))
+            .unwrap();
+        let duplicate = HostKeyChallenge {
+            host: first.host,
+            port: first.port,
+            key_type: first.key_type,
+            fingerprint: first.fingerprint,
+            public_key: first.public_key,
+        };
+
+        assert!(
+            !store
+                .prepare_add(
+                    duplicate,
+                    "duplicate".to_owned(),
+                    "2026-01-02T00:00:00.000Z".to_owned(),
+                )
+                .unwrap()
+                .changed
+        );
+
+        let second = record("second", "same.example", &second_key);
+        let mutation = store
+            .prepare_add(
+                HostKeyChallenge {
+                    host: second.host,
+                    port: second.port,
+                    key_type: second.key_type,
+                    fingerprint: second.fingerprint,
+                    public_key: second.public_key,
+                },
+                second.id,
+                second.created_at,
+            )
+            .unwrap();
+        assert!(mutation.changed);
+        assert_eq!(mutation.view.hosts.len(), 2);
+    }
+
+    #[test]
+    fn rollback_preserves_committed_state_and_pending_mutations_serialize() {
+        let first_key = test_key();
+        let second_key = test_key();
+        let store = KnownHostStore::new();
+        let first = record("first", "a.example", &first_key);
+        store
+            .hydrate(Some(serde_json::to_string(&vec![first.clone()]).unwrap()))
+            .unwrap();
+        let second = record("second", "b.example", &second_key);
+        let mutation = store
+            .prepare_add(
+                HostKeyChallenge {
+                    host: second.host,
+                    port: second.port,
+                    key_type: second.key_type,
+                    fingerprint: second.fingerprint,
+                    public_key: second.public_key,
+                },
+                second.id,
+                second.created_at,
+            )
+            .unwrap();
+
+        assert!(matches!(
+            store.prepare_remove(first.id.clone()),
+            Err(KnownHostStoreError::MutationInProgress(_))
+        ));
+        assert!(matches!(
+            store.commit(mutation.token + 1),
+            Err(KnownHostStoreError::InvalidMutation(_))
+        ));
+        let rolled_back = store.rollback(mutation.token).unwrap();
+
+        assert_eq!(rolled_back.hosts, vec![first]);
     }
 }

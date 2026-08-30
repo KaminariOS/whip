@@ -20,6 +20,8 @@ import {
 } from '../src/services/credentialVault';
 import type { ConnectionProfile } from '../src/types';
 
+jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {

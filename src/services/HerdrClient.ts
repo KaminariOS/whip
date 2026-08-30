@@ -215,6 +215,14 @@ export class HerdrClient {
     };
   }
 
+  setMonitoringState(
+    appActive: boolean,
+    hostsVisible: boolean,
+    accessLocked: boolean,
+  ): void {
+    this.native.setMonitoringState(appActive, hostsVisible, accessLocked);
+  }
+
   private requireProfile(): ConnectionProfile {
     if (!this.profile) throw new Error('SSH connection is not active');
     return this.profile;

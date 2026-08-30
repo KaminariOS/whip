@@ -1,9 +1,8 @@
-import type { PaneInfo } from './types';
-
 export interface TerminalSession {
   terminalId: string;
   paneId: string;
   title: string;
+  /** Visual-only preference retained by the React persistence adapter. */
   fontSize?: number;
   kind?: 'herdr' | 'ssh';
   status: TerminalSessionStatus;
@@ -11,17 +10,11 @@ export interface TerminalSession {
   reconnectAttempt: number;
 }
 
-export type TerminalSessionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
-
-export function terminalSessionStatusFromNative(
-  state: string,
-  retrying: boolean,
-): TerminalSessionStatus {
-  if (state === 'attached') return 'connected';
-  if (state === 'opening') return 'connecting';
-  if (state === 'failed' && !retrying) return 'error';
-  return 'disconnected';
-}
+export type TerminalSessionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'error';
 
 export interface TerminalSessionsState {
   sessions: TerminalSession[];
@@ -37,133 +30,4 @@ export const SSH_SHELL_TERMINAL_ID = '__whip_ssh_shell__';
 
 export function isSshShellTerminalId(terminalId: string): boolean {
   return terminalId === SSH_SHELL_TERMINAL_ID;
-}
-
-export function openSshShellSession(
-  state: TerminalSessionsState,
-  title = 'SSH shell',
-): TerminalSessionsState {
-  const existing = state.sessions.find(session => isSshShellTerminalId(session.terminalId));
-  if (existing) {
-    return {
-      sessions: state.sessions.map(session => (
-        session.terminalId === existing.terminalId ? { ...session, title } : session
-      )),
-      activeTerminalId: existing.terminalId,
-    };
-  }
-
-  const session: TerminalSession = {
-    terminalId: SSH_SHELL_TERMINAL_ID,
-    paneId: SSH_SHELL_TERMINAL_ID,
-    title,
-    kind: 'ssh',
-    status: 'connecting',
-    reconnectAttempt: 0,
-  };
-  return {
-    sessions: [...state.sessions, session],
-    activeTerminalId: session.terminalId,
-  };
-}
-
-function titleForPane(pane: PaneInfo): string {
-  return pane.label || pane.display_agent || pane.agent || pane.pane_id;
-}
-
-export function openTerminalSession(
-  state: TerminalSessionsState,
-  pane: PaneInfo,
-): TerminalSessionsState {
-  const existing = state.sessions.find(session => session.terminalId === pane.terminal_id);
-  if (existing) {
-    return {
-      sessions: state.sessions.map(session =>
-        session.terminalId === pane.terminal_id
-          ? { ...session, paneId: pane.pane_id, title: titleForPane(pane) }
-          : session,
-      ),
-      activeTerminalId: existing.terminalId,
-    };
-  }
-
-  const session: TerminalSession = {
-    terminalId: pane.terminal_id,
-    paneId: pane.pane_id,
-    title: titleForPane(pane),
-    kind: 'herdr',
-    status: 'connecting',
-    reconnectAttempt: 0,
-  };
-  return {
-    sessions: [...state.sessions, session],
-    activeTerminalId: session.terminalId,
-  };
-}
-
-export function updateTerminalSession(
-  state: TerminalSessionsState,
-  terminalId: string,
-  update: Partial<Pick<TerminalSession, 'status' | 'error' | 'reconnectAttempt' | 'title' | 'paneId' | 'fontSize'>>,
-): TerminalSessionsState {
-  if (!state.sessions.some(session => session.terminalId === terminalId)) return state;
-  return {
-    ...state,
-    sessions: state.sessions.map(session => (
-      session.terminalId === terminalId ? { ...session, ...update } : session
-    )),
-  };
-}
-
-export function reconcileTerminalSessions(
-  state: TerminalSessionsState,
-  panes: PaneInfo[],
-): TerminalSessionsState {
-  const panesByTerminal = new Map(panes.map(pane => [pane.terminal_id, pane]));
-  const sessions = state.sessions
-    .filter(session => session.kind === 'ssh' || panesByTerminal.has(session.terminalId))
-    .map(session => {
-      if (session.kind === 'ssh') return session;
-      const pane = panesByTerminal.get(session.terminalId)!;
-      return {
-        ...session,
-        paneId: pane.pane_id,
-        title: titleForPane(pane),
-      };
-    });
-
-  if (sessions.length === state.sessions.length && sessions.every((session, index) => (
-    session.paneId === state.sessions[index].paneId
-      && session.title === state.sessions[index].title
-  ))) {
-    return state;
-  }
-
-  const previousActiveIndex = state.sessions.findIndex(session => session.terminalId === state.activeTerminalId);
-  const fallback = sessions[Math.min(Math.max(0, previousActiveIndex), sessions.length - 1)];
-  const activeTerminalId = sessions.some(session => session.terminalId === state.activeTerminalId)
-    ? state.activeTerminalId
-    : fallback?.terminalId ?? null;
-  return { sessions, activeTerminalId };
-}
-
-export function closeTerminalSession(
-  state: TerminalSessionsState,
-  terminalId: string,
-): TerminalSessionsState {
-  const index = state.sessions.findIndex(session => session.terminalId === terminalId);
-  if (index < 0) {
-    return state;
-  }
-
-  const sessions = state.sessions.filter(session => session.terminalId !== terminalId);
-  if (state.activeTerminalId !== terminalId) {
-    return { sessions, activeTerminalId: state.activeTerminalId };
-  }
-
-  const fallback = sessions[Math.min(index, sessions.length - 1)];
-  return {
-    sessions,
-    activeTerminalId: fallback?.terminalId ?? null,
-  };
 }

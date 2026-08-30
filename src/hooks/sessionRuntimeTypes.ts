@@ -1,28 +1,34 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { HostRuntimeState } from 'react-native-whip-ssh';
+import type { MutableRefObject } from 'react';
+import type {
+  AppCoreProjection,
+  HostRuntimeState,
+  NativeAppCore,
+  RuntimeAgentStatusTransition,
+} from 'react-native-whip-ssh';
 
 import type { LiveHostSessionsState } from '../liveHostSessions';
 import type { HerdrClient } from '../services/HerdrClient';
-import type { AgentStatus, ConnectionProfile } from '../types';
+import type { ConnectionProfile, HostProfile } from '../types';
 
 export interface LiveRuntime {
   client: HerdrClient;
   profile: ConnectionProfile;
-  previousStatuses: Map<string, AgentStatus> | null;
   latencyFailureActive: boolean;
   latencyDiagnosticFailureRecorded: boolean;
   latencyFailures: number;
   acceptHostState: (
     state: HostRuntimeState,
-    changedAgentPaneIds?: string[],
+    transitions?: RuntimeAgentStatusTransition[],
   ) => void;
 }
 
 export interface SessionRuntimeStore {
   state: LiveHostSessionsState;
-  setState: Dispatch<SetStateAction<LiveHostSessionsState>>;
   stateRef: MutableRefObject<LiveHostSessionsState>;
   runtimesRef: MutableRefObject<Map<string, LiveRuntime>>;
+  appCoreRef: MutableRefObject<NativeAppCore>;
+  sessionProfilesRef: MutableRefObject<Map<string, HostProfile>>;
+  commitAppCore: (view: AppCoreProjection) => void;
 }
 
 export interface ConnectOptions {

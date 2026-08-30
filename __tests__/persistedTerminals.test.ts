@@ -10,60 +10,41 @@ import {
   PersistedTerminalsWriter,
   savePersistedTerminals,
 } from '../src/services/persistedTerminals';
-import { emptyTerminalSessions, openSshShellSession } from '../src/terminalSessions';
-import type { HerdrSnapshot, PaneInfo } from '../src/types';
+import type { TerminalSessionsState } from '../src/terminalSessions';
 
 const mockGetItem = jest.mocked(AsyncStorage.getItem);
 const mockSetItem = jest.mocked(AsyncStorage.setItem);
-
-function pane(paneId: string, terminalId: string, tabId: string, focused = false): PaneInfo {
-  return {
-    pane_id: paneId,
-    terminal_id: terminalId,
-    workspace_id: 'w1',
-    tab_id: tabId,
-    focused,
-    agent_status: 'idle',
-    revision: 1,
-  };
-}
-
-const capsule = pane('p-capsule', 'term-capsule', 't-capsule');
-const grok = pane('p-grok', 'term-grok', 't-grok', true);
-const snapshot: HerdrSnapshot = {
-  server: { running: true },
-  focused_workspace_id: 'w1',
-  focused_tab_id: 't-grok',
-  focused_pane_id: 'p-grok',
-  agents: [],
-  workspaces: [],
-  tabs: [],
-  panes: [capsule, grok],
-  layouts: [],
-};
 
 beforeEach(() => {
   mockGetItem.mockReset();
   mockSetItem.mockReset();
 });
 
-test('makes the server-focused pane active instead of the previously persisted terminal', async () => {
+test('loads raw terminal identity for Rust validation and focus reconciliation', async () => {
   mockGetItem.mockResolvedValue(JSON.stringify({
     activeTerminalId: 'term-capsule',
     sessions: [{ terminalId: 'term-capsule', paneId: 'p-capsule', title: 'capsule' }],
   }));
 
-  await expect(loadPersistedTerminals('thinker', snapshot)).resolves.toMatchObject({
-    activeTerminalId: 'term-grok',
-    sessions: [
-      { terminalId: 'term-capsule', paneId: 'p-capsule' },
-      { terminalId: 'term-grok', paneId: 'p-grok' },
-    ],
+  await expect(loadPersistedTerminals('thinker')).resolves.toMatchObject({
+    activeTerminalId: 'term-capsule',
+    terminalIds: ['term-capsule'],
   });
 });
 
 test('does not persist an ephemeral SSH fallback shell as a Herdr pane', async () => {
-  await savePersistedTerminals('fresh', openSshShellSession(emptyTerminalSessions));
+  const shell: TerminalSessionsState = {
+    activeTerminalId: '__whip_ssh_shell__',
+    sessions: [{
+      terminalId: '__whip_ssh_shell__',
+      paneId: '__whip_ssh_shell__',
+      title: 'SSH shell',
+      kind: 'ssh',
+      status: 'connecting',
+      reconnectAttempt: 0,
+    }],
+  };
+  await savePersistedTerminals('fresh', shell);
 
   expect(mockSetItem).toHaveBeenCalledWith(
     'herdr.terminal.sessions.v1.fresh',
@@ -82,11 +63,9 @@ test('restores a pane font zoom across app restarts', async () => {
     }],
   }));
 
-  const restored = await loadPersistedTerminals('thinker', snapshot);
+  const restored = await loadPersistedTerminals('thinker');
 
-  expect(restored.sessions.find(session => session.terminalId === 'term-grok')).toMatchObject({
-    fontSize: 10,
-  });
+  expect(restored.fontSizes.get('term-grok')).toBe(10);
 });
 
 test('persists each pane font zoom with its restored terminal', async () => {
@@ -231,7 +210,7 @@ test('logs persisted-terminal getItem rejection without changing rejection behav
   const error = new Error('read unavailable');
   mockGetItem.mockRejectedValueOnce(error);
 
-  await expect(loadPersistedTerminals('thinker', snapshot)).rejects.toBe(error);
+  await expect(loadPersistedTerminals('thinker')).rejects.toBe(error);
 
   expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
     '[StorageDiagnostics] storage-read-failed',
@@ -246,9 +225,10 @@ test('logs malformed persisted-terminal JSON and keeps returning empty state', a
   const consoleError = jest.spyOn(console, 'error').mockImplementation();
   mockGetItem.mockResolvedValueOnce('{not json');
 
-  await expect(loadPersistedTerminals('thinker', snapshot)).resolves.toEqual({
-    sessions: [],
+  await expect(loadPersistedTerminals('thinker')).resolves.toEqual({
+    terminalIds: [],
     activeTerminalId: null,
+    fontSizes: new Map(),
   });
   expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
     '[StorageDiagnostics] storage-parse-failed',

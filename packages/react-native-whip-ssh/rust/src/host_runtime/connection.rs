@@ -169,7 +169,7 @@ pub(super) async fn finish_connection(
     }
     inner.agents.connected();
     publish_lifecycle_status(&inner);
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     let restored = if restoring {
         restore_resources(inner.clone(), epoch).await
     } else {
@@ -218,7 +218,7 @@ pub(super) async fn initial_connect(inner: Arc<RuntimeInner>) -> Result<(), Host
             }
             drop(state);
             publish_lifecycle_status(&inner);
-            emit_host_state(&inner, Vec::new());
+            emit_host_state(&inner);
             emit_diagnostic(
                 &inner,
                 RuntimeDiagnosticOperation::SshConnect,
@@ -272,7 +272,7 @@ pub(super) fn begin_reconnect_for_generation(
     let _ = inner.cancellation.send(epoch);
     inner.agents.disconnected(false, &reason);
     publish_lifecycle_status(&inner);
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     crate::runtime()
         .ok()
         .map(|runtime| {
@@ -366,7 +366,7 @@ pub(super) async fn reconnect_loop(
         state.host_state.mark_reconnecting(last_error.clone());
     }
     publish_lifecycle_status(&inner);
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     emit(HostRuntimeEvent::FatalError {
         runtime_id: inner.id.clone(),
         message: format!(
@@ -721,7 +721,7 @@ pub(super) fn fail_herdr_startup_sync(
         .lock()
         .host_state
         .fail_sync(token, error.to_string());
-    emit_host_state(inner, Vec::new());
+    emit_host_state(inner);
 }
 
 pub(super) async fn complete_herdr_startup_sync(
@@ -742,7 +742,7 @@ pub(super) async fn complete_herdr_startup_sync(
             .host_state
             .complete_sync(token, ready.snapshot, now_ms())
     };
-    emit_host_state(&inner, Vec::new());
+    emit_host_state(&inner);
     if matches!(outcome, ApplyResult::IgnoredStale) {
         return Err(HostRuntimeError::StaleOperation(
             "Herdr startup state sync was superseded by a newer host-state operation".to_owned(),
@@ -892,7 +892,7 @@ impl HostRuntime {
                 };
                 invalidate_remote_operations(&inner, generation, "Host runtime disconnected");
                 publish_lifecycle_status(&inner);
-                emit_host_state(&inner, Vec::new());
+                emit_host_state(&inner);
                 inner.terminal_settled.notify_waiters();
                 inner.agents.disconnected(true, "Host runtime disconnected");
                 close_herdr_event_subscription(inner.id.clone());
@@ -909,7 +909,7 @@ impl HostRuntime {
                     state.last_error = None;
                 }
                 publish_lifecycle_status(&inner);
-                emit_host_state(&inner, Vec::new());
+                emit_host_state(&inner);
                 runtimes().write().remove(&inner.id);
                 Ok(())
             })

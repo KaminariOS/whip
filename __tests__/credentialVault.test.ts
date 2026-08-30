@@ -7,6 +7,8 @@ const mockNativeVault = {
 };
 let mockStoredBackups: string | null = null;
 
+jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+
 jest.mock('react-native', () => {
   return {
     NativeModules: {},

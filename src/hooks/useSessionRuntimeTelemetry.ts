@@ -1,10 +1,11 @@
 import { startTransition, useCallback, useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
-import type { RuntimeDiagnostic } from 'react-native-whip-ssh';
+import type {
+  RuntimeDiagnostic,
+  RuntimeHostLatencyMeasurement,
+} from 'react-native-whip-ssh';
 
 import type { useLiveHostTelemetry } from './useLiveHostTelemetry';
 import type { LiveRuntime, SessionRuntimeStore } from './sessionRuntimeTypes';
-import { findLiveHostSession } from '../liveHostSessions';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   SLOW_HOST_LATENCY_MS,
@@ -13,18 +14,12 @@ import {
   recordSlowHostLatency,
   type HostLatencyMeasurement,
 } from '../services/latencyDiagnostics';
-import {
-  networkErrorMessage,
-  recordNetworkDiagnostic,
-} from '../services/networkDiagnostics';
+import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import {
   beginAppPerformanceTrace,
   endAppPerformanceTrace,
-  withAppPerformanceTrace,
   type AppPerformanceTrace,
 } from '../services/performanceTrace';
-
-const HOST_LATENCY_PROBE_TRACE = 'Whip host latency probe end to end';
 
 function recordLatencyMeasurement(
   sessionId: string,
@@ -45,14 +40,11 @@ function recordLatencyMeasurement(
 }
 
 export function useSessionRuntimeTelemetry({
-  state,
-  stateRef,
   runtimesRef,
   telemetry,
-}: Pick<SessionRuntimeStore, 'state' | 'stateRef' | 'runtimesRef'> & {
+}: Pick<SessionRuntimeStore, 'runtimesRef'> & {
   telemetry: ReturnType<typeof useLiveHostTelemetry>;
 }) {
-  const latencyPingsInFlightRef = useRef(new Map<string, LiveRuntime>());
   const latencyStateApplyTracesRef = useRef(new Set<AppPerformanceTrace>());
   const { clearLatency, recordLatency } = telemetry;
 
@@ -127,75 +119,52 @@ export function useSessionRuntimeTelemetry({
     [],
   );
 
-  const probeLiveHost = useCallback(
-    (sessionId: string) => {
-      if (AppState.currentState !== 'active') return;
-      const session = findLiveHostSession(stateRef.current, sessionId);
-      if (session?.status !== 'ready') return;
-      const runtime = runtimesRef.current.get(sessionId);
-      if (
-        !runtime ||
-        latencyPingsInFlightRef.current.get(sessionId) === runtime
-      ) {
-        return;
-      }
-      latencyPingsInFlightRef.current.set(sessionId, runtime);
-      withAppPerformanceTrace(HOST_LATENCY_PROBE_TRACE, () =>
-        runtime.client.measureLatency(),
-      )
-        .then(measurement => {
-          if (runtimesRef.current.get(sessionId) !== runtime) return;
-          runtime.latencyFailures = 0;
-          runtime.latencyDiagnosticFailureRecorded = false;
-          if (runtime.latencyFailureActive) {
-            runtime.latencyFailureActive = false;
-            recordNetworkDiagnostic('info', 'latency-probe-recovered', {
-              sessionId,
-              latencyMs: measurement.latencyMs,
-            });
-          }
-          const trace = beginAppPerformanceTrace(
-            'Whip host latency state apply',
-          );
-          startTransition(() => {
-            const changed = recordLatency(sessionId, measurement.latencyMs);
-            if (trace && changed) latencyStateApplyTracesRef.current.add(trace);
-            else endAppPerformanceTrace(trace);
-          });
-          recordLatencyMeasurement(sessionId, measurement);
-        })
-        .catch(probeError => {
-          if (runtimesRef.current.get(sessionId) !== runtime) return;
-          runtime.latencyFailures += 1;
-          clearLatency(sessionId);
-          if (!runtime.latencyFailureActive) {
-            runtime.latencyFailureActive = true;
-            recordNetworkDiagnostic('warn', 'latency-probe-failed', {
-              sessionId,
-              failures: runtime.latencyFailures,
-              error: networkErrorMessage(probeError),
-            });
-          }
-        })
-        .finally(() => {
-          if (latencyPingsInFlightRef.current.get(sessionId) === runtime) {
-            latencyPingsInFlightRef.current.delete(sessionId);
-          }
-        });
-    },
-    [clearLatency, recordLatency, runtimesRef, stateRef],
-  );
-
-  const measureLatencies = useCallback(() => {
-    for (const session of state.sessions) {
-      if (session.status === 'ready') probeLiveHost(session.id);
+  const handleLatencyMeasurement = useCallback((
+    sessionId: string,
+    runtime: LiveRuntime,
+    native: RuntimeHostLatencyMeasurement,
+  ) => {
+    if (runtimesRef.current.get(sessionId) !== runtime) return;
+    const round = (value: number) => Math.round(value * 10) / 10;
+    const measurement: HostLatencyMeasurement = {
+      latencyMs: Math.round(native.sshRttMs),
+      sshRttMs: round(native.sshRttMs),
+      totalMs: round(native.totalMs),
+      runtimeOverheadMs: round(native.runtimeOverheadMs),
+    };
+    runtime.latencyFailures = 0;
+    runtime.latencyDiagnosticFailureRecorded = false;
+    if (runtime.latencyFailureActive) {
+      runtime.latencyFailureActive = false;
+      recordNetworkDiagnostic('info', 'latency-probe-recovered', {
+        sessionId,
+        latencyMs: measurement.latencyMs,
+      });
     }
-  }, [probeLiveHost, state.sessions]);
+    const trace = beginAppPerformanceTrace('Whip host latency state apply');
+    startTransition(() => {
+      const changed = recordLatency(sessionId, measurement.latencyMs);
+      if (trace && changed) latencyStateApplyTracesRef.current.add(trace);
+      else endAppPerformanceTrace(trace);
+    });
+    recordLatencyMeasurement(sessionId, measurement);
+  }, [recordLatency, runtimesRef]);
+
+  const setMonitoringState = useCallback((
+    appActive: boolean,
+    hostsVisible: boolean,
+    accessLocked: boolean,
+  ) => {
+    for (const runtime of runtimesRef.current.values()) {
+      runtime.client.setMonitoringState(appActive, hostsVisible, accessLocked);
+    }
+  }, [runtimesRef]);
 
   return {
     clearLatency,
     handleReconnectRecovered,
     handleRuntimeDiagnostic,
-    measureLatencies,
+    handleLatencyMeasurement,
+    setMonitoringState,
   };
 }

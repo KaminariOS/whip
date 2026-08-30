@@ -51,47 +51,51 @@ impl HostRuntime {
         let inner = self.inner.clone();
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
-            .spawn(async move {
-                let started_at = Instant::now();
-                let result = match current_ssh(&inner) {
-                    Ok(ssh) => ssh.latency_ms().await.map_err(HostRuntimeError::from),
-                    Err(error) => Err(error),
-                };
-                match result {
-                    Ok(ssh_rtt_ms) => {
-                        let total_ms = elapsed_ms(started_at);
-                        if total_ms >= SLOW_RUNTIME_DIAGNOSTIC_MS {
-                            emit_diagnostic(
-                                &inner,
-                                RuntimeDiagnosticOperation::HostLatencyProbe,
-                                started_at,
-                                Some(ssh_rtt_ms),
-                                None,
-                                None,
-                            );
-                        }
-                        Ok(HostLatencyMeasurement {
-                            ssh_rtt_ms,
-                            total_ms,
-                            runtime_overhead_ms: (total_ms - ssh_rtt_ms).max(0.0),
-                        })
-                    }
-                    Err(error) => {
-                        emit_diagnostic(
-                            &inner,
-                            RuntimeDiagnosticOperation::HostLatencyProbe,
-                            started_at,
-                            None,
-                            None,
-                            Some(error.to_string()),
-                        );
-                        Err(error)
-                    }
-                }
-            })
+            .spawn(measure_host_latency_inner(inner))
             .await
             .map_err(|error| {
                 HostRuntimeError::SshTransportFailure(format!("SSH latency task failed: {error}"))
             })?
+    }
+}
+
+pub(super) async fn measure_host_latency_inner(
+    inner: Arc<RuntimeInner>,
+) -> Result<HostLatencyMeasurement, HostRuntimeError> {
+    let started_at = Instant::now();
+    let result = match current_ssh(&inner) {
+        Ok(ssh) => ssh.latency_ms().await.map_err(HostRuntimeError::from),
+        Err(error) => Err(error),
+    };
+    match result {
+        Ok(ssh_rtt_ms) => {
+            let total_ms = elapsed_ms(started_at);
+            if total_ms >= SLOW_RUNTIME_DIAGNOSTIC_MS {
+                emit_diagnostic(
+                    &inner,
+                    RuntimeDiagnosticOperation::HostLatencyProbe,
+                    started_at,
+                    Some(ssh_rtt_ms),
+                    None,
+                    None,
+                );
+            }
+            Ok(HostLatencyMeasurement {
+                ssh_rtt_ms,
+                total_ms,
+                runtime_overhead_ms: (total_ms - ssh_rtt_ms).max(0.0),
+            })
+        }
+        Err(error) => {
+            emit_diagnostic(
+                &inner,
+                RuntimeDiagnosticOperation::HostLatencyProbe,
+                started_at,
+                None,
+                None,
+                Some(error.to_string()),
+            );
+            Err(error)
+        }
     }
 }

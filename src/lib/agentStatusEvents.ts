@@ -1,32 +1,7 @@
-import type { AgentInfo, AgentStatus, HerdrSnapshot, TabInfo } from '../types';
-
-export function shouldNotifyAgentTransition(
-  previous: AgentStatus | undefined,
-  next: AgentStatus,
-): boolean {
-  if (!previous || previous === next) return false;
-  // Herdr projects an unseen Idle detector state as Done. A public Idle state
-  // is already seen, so clients should not reconstruct completion from it.
-  return isAgentAlertingStatus(next);
-}
+import type { AgentInfo, AgentStatus, TabInfo } from '../types';
 
 export function isAgentAlertingStatus(status: AgentStatus): boolean {
   return status === 'blocked' || status === 'done';
-}
-
-/**
- * Read the status that currently drives the visible UI before applying an
- * incoming event or snapshot. The runtime cache is only a fallback: refreshes
- * and events can race, so it must not suppress a transition the user can see.
- */
-export function previousVisibleAgentStatus(
-  snapshot: Pick<HerdrSnapshot, 'agents' | 'panes'> | undefined,
-  paneId: string,
-  fallback?: AgentStatus,
-): AgentStatus | undefined {
-  return snapshot?.agents.find(agent => agent.pane_id === paneId)?.agent_status
-    ?? snapshot?.panes.find(pane => pane.pane_id === paneId)?.agent_status
-    ?? fallback;
 }
 
 export function foregroundUsesBriefAlerts(appHasFocus: boolean): boolean {

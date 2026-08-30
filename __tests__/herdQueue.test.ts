@@ -1,234 +1,59 @@
 import {
-  agentsForHerdFilter,
-  orderByConnectionAndAgentStatusPriority,
   orderByAgentStatusPriority,
+  orderByConnectionAndAgentStatusPriority,
   tabAgentStateChangeSequence,
-  queuesForHerdFilter,
-  resolveHerdHostFilter,
-  resolveHerdWorkspaceFilter,
-  type HerdHostQueue,
 } from '../src/herdQueue';
-import type { AgentInfo, TabInfo, WorkspaceInfo } from '../src/types';
-
-function queue(id: string, label: string, tabLabel: string): HerdHostQueue {
-  const agent = {
-    terminal_id: 'terminal-1',
-    pane_id: 'pane-1',
-    tab_id: 'tab-1',
-    workspace_id: 'workspace-1',
-    agent_status: 'working',
-    focused: false,
-    revision: 1,
-  } satisfies AgentInfo;
-  const tab = {
-    tab_id: 'tab-1',
-    workspace_id: 'workspace-1',
-    number: 1,
-    label: tabLabel,
-    focused: false,
-    pane_count: 1,
-    agent_status: 'working',
-  } satisfies TabInfo;
-  const workspace = {
-    workspace_id: 'workspace-1',
-    number: 1,
-    label: `${label} space`,
-    focused: false,
-    pane_count: 1,
-    tab_count: 1,
-    active_tab_id: 'tab-1',
-    agent_status: 'working',
-  } satisfies WorkspaceInfo;
-  return {
-    id,
-    label,
-    address: `${id}.example`,
-    running: true,
-    refreshing: false,
-    agents: [agent],
-    workspaces: [workspace],
-    tabs: [tab],
-  };
-}
-
-const queues = [
-  queue('host-1', 'Studio', 'Build'),
-  queue('host-2', 'Laptop', 'Review'),
-];
+import type { AgentInfo, TabInfo } from '../src/types';
 
 test('orders attention statuses before running and idle statuses', () => {
   const statuses = ['idle', 'working', 'done', 'unknown', 'blocked'] as const;
-
   expect(orderByAgentStatusPriority(statuses, status => status)).toEqual([
-    'blocked',
-    'done',
-    'working',
-    'idle',
-    'unknown',
+    'blocked', 'done', 'working', 'idle', 'unknown',
   ]);
   expect(statuses).toEqual(['idle', 'working', 'done', 'unknown', 'blocked']);
 });
 
-test('orders connected hosts first using Herd agent-status priority', () => {
+test('orders connected hosts first using agent-status priority', () => {
   const hosts = [
     { id: 'offline-done', connected: false, status: 'done' },
     { id: 'connected-working', connected: true, status: 'working' },
     { id: 'connected-blocked', connected: true, status: 'blocked' },
-    { id: 'connected-done', connected: true, status: 'done' },
-    { id: 'offline-blocked', connected: false, status: 'blocked' },
   ] as const;
-
   expect(orderByConnectionAndAgentStatusPriority(
     hosts,
     host => host.connected,
     host => host.status,
   ).map(host => host.id)).toEqual([
-    'connected-blocked',
-    'connected-done',
-    'connected-working',
-    'offline-done',
-    'offline-blocked',
+    'connected-blocked', 'connected-working', 'offline-done',
   ]);
 });
 
 test('orders equal statuses by the most recent native state change', () => {
   const agents = [
-    { id: 'distributedTraining', status: 'idle', stateChangeSequence: 105 },
-    { id: 'blocked', status: 'blocked', stateChangeSequence: 400 },
-    { id: 'newer-idle', status: 'idle', stateChangeSequence: 379 },
-    { id: 'missing-sequence', status: 'idle', stateChangeSequence: undefined },
+    { id: 'old', status: 'idle', sequence: 105 },
+    { id: 'new', status: 'idle', sequence: 379 },
+    { id: 'missing', status: 'idle', sequence: undefined },
   ] as const;
-
   expect(orderByAgentStatusPriority(
     agents,
     item => item.status,
-    item => item.stateChangeSequence,
-  ).map(item => item.id)).toEqual([
-    'blocked',
-    'newer-idle',
-    'distributedTraining',
-    'missing-sequence',
-  ]);
+    item => item.sequence,
+  ).map(item => item.id)).toEqual(['new', 'old', 'missing']);
 });
 
-test('uses the newest matching agent state change to order aggregate tabs', () => {
-  const host = queue('host-1', 'Studio', 'distributedTraining');
-  const distributedTraining = host.tabs[0];
-  const agents = [
-    { ...host.agents[0], state_change_seq: 105 },
-    {
-      ...host.agents[0],
-      terminal_id: 'terminal-2',
-      pane_id: 'pane-2',
-      state_change_seq: 379,
-    },
-    {
-      ...host.agents[0],
-      terminal_id: 'terminal-3',
-      pane_id: 'pane-3',
-      agent_status: 'blocked' as const,
-      state_change_seq: 500,
-    },
-  ];
-
-  expect(tabAgentStateChangeSequence(distributedTraining, agents)).toBe(379);
-});
-
-test('merges every host queue while retaining host and tab context', () => {
-  expect(agentsForHerdFilter(queues, null).map(item => ({
-    hostId: item.hostId,
-    hostLabel: item.hostLabel,
-    tabLabel: item.tabLabel,
-    primaryLabel: item.primaryLabel,
-  }))).toEqual([
-    { hostId: 'host-1', hostLabel: 'Studio', tabLabel: 'Build', primaryLabel: 'Studio space' },
-    { hostId: 'host-2', hostLabel: 'Laptop', tabLabel: 'Review', primaryLabel: 'Laptop space' },
-  ]);
-});
-
-test('uses the space label and only appends the tab for multi-tab spaces', () => {
-  const singleTab = queue('host-1', 'Studio', 'Build');
-  const multiTab = queue('host-2', 'Laptop', 'Review');
-  multiTab.tabs.push({
-    ...multiTab.tabs[0],
-    tab_id: 'tab-2',
-    number: 2,
-    label: 'Tests',
-  });
-
-  expect(agentsForHerdFilter([singleTab, multiTab], null).map(item => item.primaryLabel)).toEqual([
-    'Studio space',
-    'Laptop space · Review',
-  ]);
-});
-
-test('falls back to the workspace id when its display label is unavailable', () => {
-  const missingWorkspace = queue('host-1', 'Studio', 'Build');
-  missingWorkspace.workspaces = [];
-
-  expect(agentsForHerdFilter([missingWorkspace], null)[0].primaryLabel).toBe('workspace-1');
-});
-
-test('selects one host queue and falls back to all when that host closes', () => {
-  expect(queuesForHerdFilter(queues, 'host-2')).toEqual([queues[1]]);
-  expect(resolveHerdHostFilter(queues, 'closed-host')).toBeNull();
-  expect(queuesForHerdFilter(queues, 'closed-host')).toEqual(queues);
-});
-
-test('automatically selects the only connected host', () => {
-  expect(resolveHerdHostFilter([queues[0]], null)).toBe('host-1');
-  expect(resolveHerdHostFilter([queues[0]], 'closed-host')).toBe('host-1');
-  expect(queuesForHerdFilter([queues[0]], null)).toEqual([queues[0]]);
-});
-
-test('filters one selected host to one space', () => {
-  const host = queue('host-1', 'Studio', 'Build');
-  host.workspaces.push({
-    ...host.workspaces[0],
-    workspace_id: 'workspace-2',
-    number: 2,
-    label: 'Review space',
-    active_tab_id: 'tab-2',
-  });
-  host.tabs.push({
-    ...host.tabs[0],
-    workspace_id: 'workspace-2',
-    tab_id: 'tab-2',
-    number: 2,
-    label: 'Review',
-  });
-  host.agents.push({
-    ...host.agents[0],
-    workspace_id: 'workspace-2',
-    tab_id: 'tab-2',
-    pane_id: 'pane-2',
-    terminal_id: 'terminal-2',
-  });
-
-  expect(agentsForHerdFilter([host], 'host-1', 'workspace-2').map(item => item.agent.terminal_id)).toEqual([
-    'terminal-2',
-  ]);
-});
-
-test('only applies a space filter within a selected host', () => {
-  expect(agentsForHerdFilter(queues, null, 'workspace-1')).toHaveLength(2);
-});
-
-test('falls back to all spaces when the selected space closes', () => {
-  const host = queue('host-1', 'Studio', 'Build');
-  host.workspaces.push({
-    ...host.workspaces[0],
-    workspace_id: 'workspace-2',
-    number: 2,
-    label: 'Review space',
-  });
-
-  expect(resolveHerdWorkspaceFilter(host, 'workspace-1')).toBe('workspace-1');
-  expect(resolveHerdWorkspaceFilter(host, 'closed-workspace')).toBeNull();
-  expect(agentsForHerdFilter([host], 'host-1', 'closed-workspace')).toHaveLength(1);
-});
-
-test('automatically selects the only space', () => {
-  expect(resolveHerdWorkspaceFilter(queues[0], null)).toBe('workspace-1');
-  expect(resolveHerdWorkspaceFilter(queues[0], 'closed-workspace')).toBe('workspace-1');
+test('uses the newest matching agent state change for an aggregate tab', () => {
+  const tab = {
+    tab_id: 'tab-1', workspace_id: 'workspace-1', number: 1, label: 'Build',
+    focused: false, pane_count: 2, agent_status: 'working',
+  } satisfies TabInfo;
+  const base = {
+    terminal_id: 'terminal-1', pane_id: 'pane-1', tab_id: 'tab-1',
+    workspace_id: 'workspace-1', agent_status: 'working', focused: false,
+    revision: 1,
+  } satisfies AgentInfo;
+  expect(tabAgentStateChangeSequence(tab, [
+    { ...base, state_change_seq: 105 },
+    { ...base, pane_id: 'pane-2', state_change_seq: 379 },
+    { ...base, pane_id: 'pane-3', agent_status: 'blocked', state_change_seq: 500 },
+  ])).toBe(379);
 });

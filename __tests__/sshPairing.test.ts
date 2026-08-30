@@ -5,6 +5,8 @@ import {
   publicKeyVerificationCode,
 } from '../src/lib/sshPairing';
 
+jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+
 describe('SSH QR pairing helpers', () => {
   it('accepts a bare OpenSSH public key and normalizes spacing', () => {
     expect(normalizeOpenSshPublicKey('  ssh-ed25519   AAAAC3NzaC1lZDI1NTE5AAAAIA==  phone  '))

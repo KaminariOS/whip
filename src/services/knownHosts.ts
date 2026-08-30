@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setTrustedHostKeys } from 'react-native-whip-ssh';
+import {
+  NativeKnownHostStore,
+  type KnownHostMutation,
+} from 'react-native-whip-ssh';
 
 import { createSecureId } from '../lib/secureId';
 import type { KnownHost } from '../types';
@@ -33,6 +36,7 @@ export class KnownHostsUnavailableError extends Error {
 
 let knownHostsMutation = Promise.resolve();
 let knownHostsState: KnownHostsLoadState = { status: 'loading' };
+const knownHostStore = new NativeKnownHostStore();
 
 export async function loadKnownHosts(): Promise<KnownHostsLoadState> {
   knownHostsState = { status: 'loading' };
@@ -56,9 +60,8 @@ export async function loadKnownHosts(): Promise<KnownHostsLoadState> {
 
 export function knownHostsFromStorage(value: string | null): KnownHostsLoadState {
   try {
-    const hosts = parseKnownHosts(value);
-    configureNativeKnownHosts(hosts);
-    knownHostsState = { status: 'loaded', hosts };
+    const view = knownHostStore.hydrate(value ?? undefined);
+    knownHostsState = { status: 'loaded', hosts: view.hosts };
   } catch (error) {
     recordStorageDiagnostic('error', 'storage-parse-failed', {
       store: 'known-hosts',
@@ -76,32 +79,15 @@ export function knownHostsFromStorage(value: string | null): KnownHostsLoadState
 export async function trustKnownHost(
   challenge: UnknownHostKeyChallenge,
 ): Promise<KnownHost[]> {
-  return mutateKnownHosts(hosts => {
-    const duplicate = hosts.some(entry => (
-      entry.host === challenge.host
-      && entry.port === challenge.port
-      && entry.keyType === challenge.keyType
-      && entry.fingerprint === challenge.fingerprint
-    ));
-    if (duplicate) return hosts;
-
-    return [
-      ...hosts,
-      {
-        id: createSecureId('known-host'),
-        host: challenge.host,
-        port: challenge.port,
-        keyType: challenge.keyType,
-        publicKey: challenge.publicKey,
-        fingerprint: challenge.fingerprint,
-        createdAt: new Date().toISOString(),
-      },
-    ].sort(compareKnownHosts);
-  });
+  return mutateKnownHosts(() => knownHostStore.prepareAdd(
+    challenge,
+    createSecureId('known-host'),
+    new Date().toISOString(),
+  ));
 }
 
 export async function deleteKnownHost(id: string): Promise<KnownHost[]> {
-  return mutateKnownHosts(hosts => hosts.filter(entry => entry.id !== id));
+  return mutateKnownHosts(() => knownHostStore.prepareRemove(id));
 }
 
 export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | null {
@@ -156,32 +142,22 @@ function structuredHostKeyPayload(
   };
 }
 
-function configureNativeKnownHosts(hosts: KnownHost[]): void {
-  setTrustedHostKeys(hosts.map(({ host, port, keyType, publicKey }) => ({
-    host,
-    port,
-    keyType,
-    publicKey,
-  })));
-}
-
 async function mutateKnownHosts(
-  update: (hosts: KnownHost[]) => KnownHost[],
+  prepare: () => KnownHostMutation,
 ): Promise<KnownHost[]> {
   const operation = knownHostsMutation.then(async () => {
     if (knownHostsState.status !== 'loaded') {
       throw new KnownHostsUnavailableError();
     }
-    const previousHosts = knownHostsState.hosts;
-    const hosts = update(previousHosts);
-    if (hosts === previousHosts) return previousHosts;
-
-    // Rust validates the protocol material before it can become durable.
-    configureNativeKnownHosts(hosts);
+    const mutation = prepare();
+    if (!mutation.changed) return mutation.view.hosts;
     try {
-      await AsyncStorage.setItem(KNOWN_HOSTS_STORAGE_KEY, JSON.stringify(hosts));
+      await AsyncStorage.setItem(
+        KNOWN_HOSTS_STORAGE_KEY,
+        mutation.view.persistedValue,
+      );
     } catch (error) {
-      configureNativeKnownHosts(previousHosts);
+      knownHostStore.rollback(mutation.token);
       recordStorageDiagnostic('error', 'storage-write-failed', {
         store: 'known-hosts',
         storageKey: KNOWN_HOSTS_STORAGE_KEY,
@@ -191,55 +167,13 @@ async function mutateKnownHosts(
       });
       throw error;
     }
-    knownHostsState = { status: 'loaded', hosts };
-    return hosts;
+    const committed = knownHostStore.commit(mutation.token);
+    knownHostsState = { status: 'loaded', hosts: committed.hosts };
+    return committed.hosts;
   });
   knownHostsMutation = operation.then(
     () => undefined,
     () => undefined,
   );
   return operation;
-}
-
-export function parseKnownHosts(value: string | null): KnownHost[] {
-  if (value === null) return [];
-  const parsed: unknown = JSON.parse(value);
-  if (!Array.isArray(parsed)) {
-    throw new TypeError('Stored known hosts must be an array');
-  }
-  const entries = parsed.filter(isKnownHost);
-  const invalidIndex = parsed.findIndex(entry => !isKnownHost(entry));
-  if (invalidIndex !== -1) {
-    throw new TypeError(`Stored known host at index ${invalidIndex} is malformed`);
-  }
-  return entries.sort(compareKnownHosts);
-}
-
-function isKnownHost(value: unknown): value is KnownHost {
-  if (!value || typeof value !== 'object') return false;
-  const entry = value as Partial<KnownHost>;
-  return (
-    typeof entry.id === 'string'
-    && entry.id.length > 0
-    && typeof entry.host === 'string'
-    && entry.host.trim().length > 0
-    && typeof entry.port === 'number'
-    && Number.isInteger(entry.port)
-    && entry.port > 0
-    && entry.port <= 65535
-    && typeof entry.keyType === 'string'
-    && entry.keyType.length > 0
-    && typeof entry.publicKey === 'string'
-    && entry.publicKey.length > 0
-    && typeof entry.fingerprint === 'string'
-    && entry.fingerprint.length > 0
-    && typeof entry.createdAt === 'string'
-    && entry.createdAt.length > 0
-  );
-}
-
-function compareKnownHosts(left: KnownHost, right: KnownHost): number {
-  return left.host.localeCompare(right.host)
-    || left.port - right.port
-    || left.keyType.localeCompare(right.keyType);
 }

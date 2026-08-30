@@ -64,6 +64,7 @@ describe('module boundaries', () => {
       'reconnectControl',
       'refreshHostState',
       'requireProfile',
+      'setMonitoringState',
       'setRuntimeEventHandler',
       'snapshot',
       'snapshotFromHostState',

@@ -4,6 +4,7 @@ mod agents;
 mod connection;
 mod diagnostics;
 mod events;
+mod monitoring;
 mod remote_files;
 mod terminal;
 
@@ -21,7 +22,7 @@ use crate::agent_sessions::AgentSessionManager;
 use crate::herdr_connection::HerdrConnection;
 use crate::herdr_events::close_herdr_event_subscription;
 use crate::herdr_terminal::{HerdrBridgeId, close_all_herdr_terminal_bridges};
-use crate::host_state::{HostState, HostStateSnapshot};
+use crate::host_state::{AgentStatusTransition, HostState, HostStateSnapshot};
 use crate::remote_ops::{PreviewState, RemoteOperationManager, TransferProgress};
 use crate::ssh::{SshErrorCode, SshFailure, SshSession};
 #[cfg(test)]
@@ -33,6 +34,7 @@ pub(crate) use events::{
     deliver_herdr_events, event_subscription_closed, terminal_bridge_closed,
     terminal_kitty_keyboard_report_all_changed,
 };
+use monitoring::*;
 use remote_files::*;
 use terminal::*;
 
@@ -229,7 +231,11 @@ pub enum HostRuntimeEvent {
     HostStateChanged {
         runtime_id: String,
         state: HostStateSnapshot,
-        changed_agent_pane_ids: Vec<String>,
+        agent_status_transitions: Vec<AgentStatusTransition>,
+    },
+    LatencyMeasured {
+        runtime_id: String,
+        measurement: HostLatencyMeasurement,
     },
     EventSubscriptionClosed {
         runtime_id: String,
@@ -496,6 +502,14 @@ struct RuntimeInner {
     cancellation: watch::Sender<u64>,
     status_tx: watch::Sender<HostRuntimeStatus>,
     terminal_settled: Notify,
+    monitoring: Mutex<MonitoringState>,
+    monitoring_changed: Arc<Notify>,
+}
+
+impl Drop for RuntimeInner {
+    fn drop(&mut self) {
+        self.monitoring_changed.notify_one();
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -521,12 +535,18 @@ fn publish_lifecycle_status(inner: &RuntimeInner) {
     });
 }
 
-fn emit_host_state(inner: &RuntimeInner, changed_agent_pane_ids: Vec<String>) {
-    let state = inner.state.lock().host_state.projection();
+fn emit_host_state(inner: &RuntimeInner) {
+    let (state, agent_status_transitions) = {
+        let mut runtime = inner.state.lock();
+        let state = runtime.host_state.projection();
+        let transitions = runtime.host_state.take_agent_status_transitions();
+        drop(runtime);
+        (state, transitions)
+    };
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,
-        changed_agent_pane_ids,
+        agent_status_transitions,
     });
 }
 
@@ -579,6 +599,8 @@ pub fn create_host_runtime(
         cancellation,
         status_tx,
         terminal_settled: Notify::new(),
+        monitoring: Mutex::new(MonitoringState::default()),
+        monitoring_changed: Arc::new(Notify::new()),
     });
     runtimes().write().insert(id, Arc::downgrade(&inner));
     Ok(Arc::new(HostRuntime { inner }))
@@ -596,6 +618,10 @@ impl HostRuntime {
 
     pub fn host_state(&self) -> HostStateSnapshot {
         self.inner.state.lock().host_state.projection()
+    }
+
+    pub fn set_monitoring_state(&self, app_active: bool, hosts_visible: bool, access_locked: bool) {
+        monitoring::set_monitoring_state(&self.inner, app_active, hosts_visible, access_locked);
     }
 }
 

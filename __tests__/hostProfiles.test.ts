@@ -12,6 +12,8 @@ import {
 } from '../src/lib/hostProfiles';
 import type { ConnectionProfile, HostProfile } from '../src/types';
 
+jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+
 const profile: ConnectionProfile = {
   id: 'host-1',
   name: 'Savior',

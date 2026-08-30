@@ -1,5 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
+import {
+  NativeAppCore,
+  type HerdProjection,
+  type HerdSessionMetadata,
+} from 'react-native-whip-ssh';
 
 import type { AppNavigationController } from './useAppNavigation';
 import type { useAgentNotifications } from './useAgentNotifications';
@@ -25,6 +30,7 @@ import type {
 import {
   emptyLiveHostSessions,
   getActiveLiveHostSession,
+  projectAppCoreSessions,
   type LiveHostSessionsState,
 } from '../liveHostSessions';
 import type { TerminalRenderTarget } from '../lib/terminalRenderer';
@@ -66,6 +72,11 @@ export interface SessionRuntimeController {
   connectingHostIds: ReadonlySet<string>;
   restoreComplete: boolean;
   terminalTargets: TerminalRenderTarget[];
+  herdView: (
+    metadata: HerdSessionMetadata[],
+    selectedHostId?: string,
+    selectedWorkspaceId?: string,
+  ) => HerdProjection;
   getState: () => LiveHostSessionsState;
   getClient: (sessionId: string) => HerdrClient | undefined;
   select: (sessionId: string, tab?: 'herd' | 'terminal') => void;
@@ -135,13 +146,42 @@ export function useSessionRuntimeManager({
   const [state, setState] = useState(emptyLiveHostSessions);
   const stateRef = useRef(state);
   const runtimesRef = useRef(new Map<string, LiveRuntime>());
+  const appCoreRef = useRef(new NativeAppCore());
+  const sessionProfilesRef = useRef(new Map<string, HostProfile>());
   const restoredTerminalHostIdsRef = useRef(new Set<string>());
   stateRef.current = state;
+  for (const host of hosts.getHosts()) {
+    sessionProfilesRef.current.set(host.id, host);
+  }
+  const projectTerminalAppCore = terminals.projectAppCore;
+  const commitAppCore = useCallback<SessionRuntimeStore['commitAppCore']>(
+    view => {
+      projectTerminalAppCore(view);
+      setState(current => projectAppCoreSessions(
+        view,
+        sessionProfilesRef.current,
+        current,
+        (sessionId, hostState) => {
+          const runtime = runtimesRef.current.get(sessionId);
+          if (!runtime) {
+            throw new Error(
+              `Rust AppCore projected host state without runtime ${sessionId}`,
+            );
+          }
+          return runtime.client.snapshotFromHostState(hostState);
+        },
+      ));
+    },
+    [projectTerminalAppCore],
+  );
+  terminals.bindAppCore(appCoreRef.current, commitAppCore);
   const store: SessionRuntimeStore = {
     state,
-    setState,
     stateRef,
     runtimesRef,
+    appCoreRef,
+    sessionProfilesRef,
+    commitAppCore,
   };
 
   const handleAgentStateChange = useAgentNotificationSideEffects({
@@ -150,8 +190,6 @@ export function useSessionRuntimeManager({
     ttsEnabled,
   });
   const runtimeTelemetry = useSessionRuntimeTelemetry({
-    state,
-    stateRef,
     runtimesRef,
     telemetry,
   });
@@ -165,6 +203,7 @@ export function useSessionRuntimeManager({
     terminals,
     clearLatency: runtimeTelemetry.clearLatency,
     handleAgentStateChange,
+    handleLatencyMeasurement: runtimeTelemetry.handleLatencyMeasurement,
     handleRuntimeDiagnostic: runtimeTelemetry.handleRuntimeDiagnostic,
     handleReconnectRecovered: runtimeTelemetry.handleReconnectRecovered,
     t,
@@ -172,7 +211,9 @@ export function useSessionRuntimeManager({
   const restoreComplete = useSessionStartupRestore({
     state,
     stateRef,
-    setState,
+    appCoreRef,
+    sessionProfilesRef,
+    commitAppCore,
     restoredTerminalHostIdsRef,
     startupStorage,
     deferredHydrationReady,
@@ -192,9 +233,7 @@ export function useSessionRuntimeManager({
     restoreComplete,
     hostsVisible,
     appAccessLocked,
-    restartConnections: connection.restartConnections,
-    measureLatencies: runtimeTelemetry.measureLatencies,
-    resumeConnections: connection.resumeConnections,
+    setRuntimeMonitoringState: runtimeTelemetry.setMonitoringState,
     onBackgroundMonitoringError: monitoringError => {
       hosts.setError(
         t('app.backgroundUnavailable', { error: String(monitoringError) }),
@@ -230,6 +269,12 @@ export function useSessionRuntimeManager({
       connectingHostIds: connection.connectingHostIds,
       restoreComplete,
       terminalTargets: terminal.terminalTargets,
+      herdView: (metadata, selectedHostId, selectedWorkspaceId) =>
+        appCoreRef.current.herdView(
+          metadata,
+          selectedHostId,
+          selectedWorkspaceId,
+        ),
       getState: connection.getState,
       getClient: connection.getClient,
       select: connection.select,

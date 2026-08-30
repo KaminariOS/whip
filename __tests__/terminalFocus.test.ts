@@ -5,7 +5,7 @@ import {
   serverFocusMatchesPendingPane,
   shouldFollowServerTerminalFocus,
 } from '../src/lib/terminalFocus';
-import { emptyTerminalSessions, openTerminalSession } from '../src/terminalSessions';
+import type { TerminalSessionsState } from '../src/terminalSessions';
 import type { PaneInfo, TabInfo } from '../src/types';
 
 const createdTab = {
@@ -32,7 +32,7 @@ const createdTab = {
 test('locally created tabs select the tab and activate the returned root terminal together', () => {
   let selectedWorkspaceId = 'workspace-1';
   let selectedTabId = 'tab-old';
-  let terminals = openTerminalSession(emptyTerminalSessions, {
+  let terminals = terminalFixture({
     ...createdTab.root_pane,
     pane_id: 'pane-old',
     terminal_id: 'terminal-old',
@@ -47,7 +47,7 @@ test('locally created tabs select the tab and activate the returned root termina
     },
     terminalSelectionStarted,
     activateTerminal: pane => {
-      terminals = openTerminalSession(terminals, pane);
+      terminals = terminalFixture(pane, terminals);
     },
   });
 
@@ -56,6 +56,24 @@ test('locally created tabs select the tab and activate the returned root termina
   expect(terminals.activeTerminalId).toBe('terminal-new');
   expect(terminalSelectionStarted).toHaveBeenCalledWith('terminal-new');
 });
+
+function terminalFixture(
+  pane: PaneInfo,
+  current: TerminalSessionsState = { sessions: [], activeTerminalId: null },
+): TerminalSessionsState {
+  const sessions = current.sessions.filter(
+    terminal => terminal.terminalId !== pane.terminal_id,
+  );
+  sessions.push({
+    terminalId: pane.terminal_id,
+    paneId: pane.pane_id,
+    title: pane.label || pane.pane_id,
+    kind: 'herdr',
+    status: 'connecting',
+    reconnectAttempt: 0,
+  });
+  return { sessions, activeTerminalId: pane.terminal_id };
+}
 
 test('keeps a created tab selected across a stale snapshot until its tab and pane are confirmed', () => {
   const oldTab = {

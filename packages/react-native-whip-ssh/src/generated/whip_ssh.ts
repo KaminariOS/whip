@@ -3344,6 +3344,111 @@ const FfiConverterTypeAgentSessionOpenResult = (() => {
   return new FFIConverter();
 })();
 
+export enum HerdrAgentStatus {
+  Idle,
+  Working,
+  Blocked,
+  Done,
+  Unknown,
+}
+
+const FfiConverterTypeHerdrAgentStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrAgentStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrAgentStatus.Idle;
+        case 2:
+          return HerdrAgentStatus.Working;
+        case 3:
+          return HerdrAgentStatus.Blocked;
+        case 4:
+          return HerdrAgentStatus.Done;
+        case 5:
+          return HerdrAgentStatus.Unknown;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrAgentStatus.Idle:
+          return ordinalConverter.write(1, into);
+        case HerdrAgentStatus.Working:
+          return ordinalConverter.write(2, into);
+        case HerdrAgentStatus.Blocked:
+          return ordinalConverter.write(3, into);
+        case HerdrAgentStatus.Done:
+          return ordinalConverter.write(4, into);
+        case HerdrAgentStatus.Unknown:
+          return ordinalConverter.write(5, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AgentStatusTransition = {
+  paneId: string;
+  previous?: HerdrAgentStatus;
+  current?: HerdrAgentStatus;
+  revision: bigint;
+};
+
+/**
+ * Generated factory for {@link AgentStatusTransition} record objects.
+ */
+export const AgentStatusTransition = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      AgentStatusTransition,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentStatusTransition>,
+  });
+})();
+
+const FfiConverterTypeAgentStatusTransition = (() => {
+  type TypeName = AgentStatusTransition;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        paneId: FfiConverterString.read(from),
+        previous: FfiConverterOptionalTypeHerdrAgentStatus.read(from),
+        current: FfiConverterOptionalTypeHerdrAgentStatus.read(from),
+        revision: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterOptionalTypeHerdrAgentStatus.write(value.previous, into);
+      FfiConverterOptionalTypeHerdrAgentStatus.write(value.current, into);
+      FfiConverterUInt64.write(value.revision, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterOptionalTypeHerdrAgentStatus.allocationSize(
+          value.previous,
+        ) +
+        FfiConverterOptionalTypeHerdrAgentStatus.allocationSize(value.current) +
+        FfiConverterUInt64.allocationSize(value.revision)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentTranscriptCacheWrite = {
   namespace: string;
   key: string;
@@ -3957,89 +4062,50 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
   return new FFIConverter();
 })();
 
-export enum GitDiffKind {
-  Text,
-  Binary,
-  Empty,
+export enum AppConnectionStatus {
+  Connecting,
+  Connected,
+  Ready,
+  Reconnecting,
+  Disconnected,
+  Error,
 }
 
-const FfiConverterTypeGitDiffKind = (() => {
+const FfiConverterTypeAppConnectionStatus = (() => {
   const ordinalConverter = FfiConverterInt32;
-  type TypeName = GitDiffKind;
+  type TypeName = AppConnectionStatus;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       switch (ordinalConverter.read(from)) {
         case 1:
-          return GitDiffKind.Text;
+          return AppConnectionStatus.Connecting;
         case 2:
-          return GitDiffKind.Binary;
+          return AppConnectionStatus.Connected;
         case 3:
-          return GitDiffKind.Empty;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case GitDiffKind.Text:
-          return ordinalConverter.write(1, into);
-        case GitDiffKind.Binary:
-          return ordinalConverter.write(2, into);
-        case GitDiffKind.Empty:
-          return ordinalConverter.write(3, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum GitDiffRowKind {
-  Header,
-  Hunk,
-  Context,
-  Addition,
-  Deletion,
-  Meta,
-}
-
-const FfiConverterTypeGitDiffRowKind = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = GitDiffRowKind;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return GitDiffRowKind.Header;
-        case 2:
-          return GitDiffRowKind.Hunk;
-        case 3:
-          return GitDiffRowKind.Context;
+          return AppConnectionStatus.Ready;
         case 4:
-          return GitDiffRowKind.Addition;
+          return AppConnectionStatus.Reconnecting;
         case 5:
-          return GitDiffRowKind.Deletion;
+          return AppConnectionStatus.Disconnected;
         case 6:
-          return GitDiffRowKind.Meta;
+          return AppConnectionStatus.Error;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
     }
     write(value: TypeName, into: RustBuffer): void {
       switch (value) {
-        case GitDiffRowKind.Header:
+        case AppConnectionStatus.Connecting:
           return ordinalConverter.write(1, into);
-        case GitDiffRowKind.Hunk:
+        case AppConnectionStatus.Connected:
           return ordinalConverter.write(2, into);
-        case GitDiffRowKind.Context:
+        case AppConnectionStatus.Ready:
           return ordinalConverter.write(3, into);
-        case GitDiffRowKind.Addition:
+        case AppConnectionStatus.Reconnecting:
           return ordinalConverter.write(4, into);
-        case GitDiffRowKind.Deletion:
+        case AppConnectionStatus.Disconnected:
           return ordinalConverter.write(5, into);
-        case GitDiffRowKind.Meta:
+        case AppConnectionStatus.Error:
           return ordinalConverter.write(6, into);
       }
     }
@@ -4050,260 +4116,187 @@ const FfiConverterTypeGitDiffRowKind = (() => {
   return new FFIConverter();
 })();
 
-export type GitDiffRow = {
-  key: string;
-  kind: GitDiffRowKind;
-  content: string;
-  marker: string;
-  oldLine?: number;
-  newLine?: number;
+export type SessionSelection = {
+  workspaceId?: string;
+  tabId?: string;
+  paneId?: string;
 };
 
 /**
- * Generated factory for {@link GitDiffRow} record objects.
+ * Generated factory for {@link SessionSelection} record objects.
  */
-export const GitDiffRow = (() => {
+export const SessionSelection = (() => {
   const defaults = () => ({});
   const create = (() => {
-    return uniffiCreateRecord<GitDiffRow, ReturnType<typeof defaults>>(
+    return uniffiCreateRecord<SessionSelection, ReturnType<typeof defaults>>(
       defaults,
     );
   })();
   return Object.freeze({
     create,
     new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<GitDiffRow>,
+    defaults: () => Object.freeze(defaults()) as Partial<SessionSelection>,
   });
 })();
 
-const FfiConverterTypeGitDiffRow = (() => {
-  type TypeName = GitDiffRow;
+const FfiConverterTypeSessionSelection = (() => {
+  type TypeName = SessionSelection;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       return {
-        key: FfiConverterString.read(from),
-        kind: FfiConverterTypeGitDiffRowKind.read(from),
-        content: FfiConverterString.read(from),
-        marker: FfiConverterString.read(from),
-        oldLine: FfiConverterOptionalUInt32.read(from),
-        newLine: FfiConverterOptionalUInt32.read(from),
+        workspaceId: FfiConverterOptionalString.read(from),
+        tabId: FfiConverterOptionalString.read(from),
+        paneId: FfiConverterOptionalString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.key, into);
-      FfiConverterTypeGitDiffRowKind.write(value.kind, into);
-      FfiConverterString.write(value.content, into);
-      FfiConverterString.write(value.marker, into);
-      FfiConverterOptionalUInt32.write(value.oldLine, into);
-      FfiConverterOptionalUInt32.write(value.newLine, into);
+      FfiConverterOptionalString.write(value.workspaceId, into);
+      FfiConverterOptionalString.write(value.tabId, into);
+      FfiConverterOptionalString.write(value.paneId, into);
     }
     allocationSize(value: TypeName): number {
       return (
-        FfiConverterString.allocationSize(value.key) +
-        FfiConverterTypeGitDiffRowKind.allocationSize(value.kind) +
-        FfiConverterString.allocationSize(value.content) +
-        FfiConverterString.allocationSize(value.marker) +
-        FfiConverterOptionalUInt32.allocationSize(value.oldLine) +
-        FfiConverterOptionalUInt32.allocationSize(value.newLine)
+        FfiConverterOptionalString.allocationSize(value.workspaceId) +
+        FfiConverterOptionalString.allocationSize(value.tabId) +
+        FfiConverterOptionalString.allocationSize(value.paneId)
       );
     }
   }
   return new FFIConverter();
 })();
 
-export type GitDiff = {
-  kind: GitDiffKind;
-  rows: Array<GitDiffRow>;
-  truncated: boolean;
-};
-
-/**
- * Generated factory for {@link GitDiff} record objects.
- */
-export const GitDiff = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<GitDiff, ReturnType<typeof defaults>>(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<GitDiff>,
-  });
-})();
-
-const FfiConverterTypeGitDiff = (() => {
-  type TypeName = GitDiff;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        kind: FfiConverterTypeGitDiffKind.read(from),
-        rows: FfiConverterSequenceTypeGitDiffRow.read(from),
-        truncated: FfiConverterBool.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterTypeGitDiffKind.write(value.kind, into);
-      FfiConverterSequenceTypeGitDiffRow.write(value.rows, into);
-      FfiConverterBool.write(value.truncated, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterTypeGitDiffKind.allocationSize(value.kind) +
-        FfiConverterSequenceTypeGitDiffRow.allocationSize(value.rows) +
-        FfiConverterBool.allocationSize(value.truncated)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type GitRepository = {
-  root: string;
-  hasHead: boolean;
-};
-
-/**
- * Generated factory for {@link GitRepository} record objects.
- */
-export const GitRepository = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<GitRepository, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<GitRepository>,
-  });
-})();
-
-const FfiConverterTypeGitRepository = (() => {
-  type TypeName = GitRepository;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        root: FfiConverterString.read(from),
-        hasHead: FfiConverterBool.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.root, into);
-      FfiConverterBool.write(value.hasHead, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.root) +
-        FfiConverterBool.allocationSize(value.hasHead)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type GitStatusEntry = {
-  indexStatus: string;
-  worktreeStatus: string;
-  path: string;
-  originalPath?: string;
-  absolutePath: string;
-};
-
-/**
- * Generated factory for {@link GitStatusEntry} record objects.
- */
-export const GitStatusEntry = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<GitStatusEntry, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<GitStatusEntry>,
-  });
-})();
-
-const FfiConverterTypeGitStatusEntry = (() => {
-  type TypeName = GitStatusEntry;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        indexStatus: FfiConverterString.read(from),
-        worktreeStatus: FfiConverterString.read(from),
-        path: FfiConverterString.read(from),
-        originalPath: FfiConverterOptionalString.read(from),
-        absolutePath: FfiConverterString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.indexStatus, into);
-      FfiConverterString.write(value.worktreeStatus, into);
-      FfiConverterString.write(value.path, into);
-      FfiConverterOptionalString.write(value.originalPath, into);
-      FfiConverterString.write(value.absolutePath, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.indexStatus) +
-        FfiConverterString.allocationSize(value.worktreeStatus) +
-        FfiConverterString.allocationSize(value.path) +
-        FfiConverterOptionalString.allocationSize(value.originalPath) +
-        FfiConverterString.allocationSize(value.absolutePath)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HerdrAgentStatus {
+export enum HostSyncStatus {
   Idle,
-  Working,
-  Blocked,
-  Done,
-  Unknown,
+  Syncing,
+  Synced,
+  Error,
 }
 
-const FfiConverterTypeHerdrAgentStatus = (() => {
+const FfiConverterTypeHostSyncStatus = (() => {
   const ordinalConverter = FfiConverterInt32;
-  type TypeName = HerdrAgentStatus;
+  type TypeName = HostSyncStatus;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       switch (ordinalConverter.read(from)) {
         case 1:
-          return HerdrAgentStatus.Idle;
+          return HostSyncStatus.Idle;
         case 2:
-          return HerdrAgentStatus.Working;
+          return HostSyncStatus.Syncing;
         case 3:
-          return HerdrAgentStatus.Blocked;
+          return HostSyncStatus.Synced;
         case 4:
-          return HerdrAgentStatus.Done;
-        case 5:
-          return HerdrAgentStatus.Unknown;
+          return HostSyncStatus.Error;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
     }
     write(value: TypeName, into: RustBuffer): void {
       switch (value) {
-        case HerdrAgentStatus.Idle:
+        case HostSyncStatus.Idle:
           return ordinalConverter.write(1, into);
-        case HerdrAgentStatus.Working:
+        case HostSyncStatus.Syncing:
           return ordinalConverter.write(2, into);
-        case HerdrAgentStatus.Blocked:
+        case HostSyncStatus.Synced:
           return ordinalConverter.write(3, into);
-        case HerdrAgentStatus.Done:
+        case HostSyncStatus.Error:
           return ordinalConverter.write(4, into);
-        case HerdrAgentStatus.Unknown:
-          return ordinalConverter.write(5, into);
       }
     }
     allocationSize(value: TypeName): number {
       return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostFreshness {
+  Loading,
+  Fresh,
+  Stale,
+  Unavailable,
+}
+
+const FfiConverterTypeHostFreshness = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostFreshness;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostFreshness.Loading;
+        case 2:
+          return HostFreshness.Fresh;
+        case 3:
+          return HostFreshness.Stale;
+        case 4:
+          return HostFreshness.Unavailable;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostFreshness.Loading:
+          return ordinalConverter.write(1, into);
+        case HostFreshness.Fresh:
+          return ordinalConverter.write(2, into);
+        case HostFreshness.Stale:
+          return ordinalConverter.write(3, into);
+        case HostFreshness.Unavailable:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostServerFocus = {
+  workspaceId?: string;
+  tabId?: string;
+  paneId?: string;
+};
+
+/**
+ * Generated factory for {@link HostServerFocus} record objects.
+ */
+export const HostServerFocus = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostServerFocus, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostServerFocus>,
+  });
+})();
+
+const FfiConverterTypeHostServerFocus = (() => {
+  type TypeName = HostServerFocus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        workspaceId: FfiConverterOptionalString.read(from),
+        tabId: FfiConverterOptionalString.read(from),
+        paneId: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.workspaceId, into);
+      FfiConverterOptionalString.write(value.tabId, into);
+      FfiConverterOptionalString.write(value.paneId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.workspaceId) +
+        FfiConverterOptionalString.allocationSize(value.tabId) +
+        FfiConverterOptionalString.allocationSize(value.paneId)
+      );
     }
   }
   return new FFIConverter();
@@ -4529,166 +4522,22 @@ const FfiConverterTypeHerdrAgentInfo = (() => {
   return new FFIConverter();
 })();
 
-export enum HerdrControlFailureKind {
-  TransportDisconnected,
-  MalformedResponse,
-  ProtocolError,
-  UnsupportedResponse,
-  InvalidField,
-  RequestCancelled,
-  RequestTimeout,
-}
-
-const FfiConverterTypeHerdrControlFailureKind = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HerdrControlFailureKind;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HerdrControlFailureKind.TransportDisconnected;
-        case 2:
-          return HerdrControlFailureKind.MalformedResponse;
-        case 3:
-          return HerdrControlFailureKind.ProtocolError;
-        case 4:
-          return HerdrControlFailureKind.UnsupportedResponse;
-        case 5:
-          return HerdrControlFailureKind.InvalidField;
-        case 6:
-          return HerdrControlFailureKind.RequestCancelled;
-        case 7:
-          return HerdrControlFailureKind.RequestTimeout;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HerdrControlFailureKind.TransportDisconnected:
-          return ordinalConverter.write(1, into);
-        case HerdrControlFailureKind.MalformedResponse:
-          return ordinalConverter.write(2, into);
-        case HerdrControlFailureKind.ProtocolError:
-          return ordinalConverter.write(3, into);
-        case HerdrControlFailureKind.UnsupportedResponse:
-          return ordinalConverter.write(4, into);
-        case HerdrControlFailureKind.InvalidField:
-          return ordinalConverter.write(5, into);
-        case HerdrControlFailureKind.RequestCancelled:
-          return ordinalConverter.write(6, into);
-        case HerdrControlFailureKind.RequestTimeout:
-          return ordinalConverter.write(7, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HerdrControlFailure = {
-  kind: HerdrControlFailureKind;
-  code?: string;
-  message: string;
+export type HerdrWorkspaceWorktreeInfo = {
+  repoKey: string;
+  repoName: string;
+  repoRoot: string;
+  checkoutPath: string;
+  isLinkedWorktree: boolean;
 };
 
 /**
- * Generated factory for {@link HerdrControlFailure} record objects.
+ * Generated factory for {@link HerdrWorkspaceWorktreeInfo} record objects.
  */
-export const HerdrControlFailure = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HerdrControlFailure, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HerdrControlFailure>,
-  });
-})();
-
-const FfiConverterTypeHerdrControlFailure = (() => {
-  type TypeName = HerdrControlFailure;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        kind: FfiConverterTypeHerdrControlFailureKind.read(from),
-        code: FfiConverterOptionalString.read(from),
-        message: FfiConverterString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterTypeHerdrControlFailureKind.write(value.kind, into);
-      FfiConverterOptionalString.write(value.code, into);
-      FfiConverterString.write(value.message, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterTypeHerdrControlFailureKind.allocationSize(value.kind) +
-        FfiConverterOptionalString.allocationSize(value.code) +
-        FfiConverterString.allocationSize(value.message)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HerdrAgentKind {
-  Claude,
-  Codex,
-  OpenCode,
-}
-
-const FfiConverterTypeHerdrAgentKind = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HerdrAgentKind;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HerdrAgentKind.Claude;
-        case 2:
-          return HerdrAgentKind.Codex;
-        case 3:
-          return HerdrAgentKind.OpenCode;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HerdrAgentKind.Claude:
-          return ordinalConverter.write(1, into);
-        case HerdrAgentKind.Codex:
-          return ordinalConverter.write(2, into);
-        case HerdrAgentKind.OpenCode:
-          return ordinalConverter.write(3, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HerdrIntegrationInstallResult = {
-  kind: HerdrAgentKind;
-  messages: Array<string>;
-};
-
-/**
- * Generated factory for {@link HerdrIntegrationInstallResult} record objects.
- */
-export const HerdrIntegrationInstallResult = (() => {
+export const HerdrWorkspaceWorktreeInfo = (() => {
   const defaults = () => ({});
   const create = (() => {
     return uniffiCreateRecord<
-      HerdrIntegrationInstallResult,
+      HerdrWorkspaceWorktreeInfo,
       ReturnType<typeof defaults>
     >(defaults);
   })();
@@ -4696,27 +4545,183 @@ export const HerdrIntegrationInstallResult = (() => {
     create,
     new: create,
     defaults: () =>
-      Object.freeze(defaults()) as Partial<HerdrIntegrationInstallResult>,
+      Object.freeze(defaults()) as Partial<HerdrWorkspaceWorktreeInfo>,
   });
 })();
 
-const FfiConverterTypeHerdrIntegrationInstallResult = (() => {
-  type TypeName = HerdrIntegrationInstallResult;
+const FfiConverterTypeHerdrWorkspaceWorktreeInfo = (() => {
+  type TypeName = HerdrWorkspaceWorktreeInfo;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       return {
-        kind: FfiConverterTypeHerdrAgentKind.read(from),
-        messages: FfiConverterSequenceString.read(from),
+        repoKey: FfiConverterString.read(from),
+        repoName: FfiConverterString.read(from),
+        repoRoot: FfiConverterString.read(from),
+        checkoutPath: FfiConverterString.read(from),
+        isLinkedWorktree: FfiConverterBool.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
-      FfiConverterTypeHerdrAgentKind.write(value.kind, into);
-      FfiConverterSequenceString.write(value.messages, into);
+      FfiConverterString.write(value.repoKey, into);
+      FfiConverterString.write(value.repoName, into);
+      FfiConverterString.write(value.repoRoot, into);
+      FfiConverterString.write(value.checkoutPath, into);
+      FfiConverterBool.write(value.isLinkedWorktree, into);
     }
     allocationSize(value: TypeName): number {
       return (
-        FfiConverterTypeHerdrAgentKind.allocationSize(value.kind) +
-        FfiConverterSequenceString.allocationSize(value.messages)
+        FfiConverterString.allocationSize(value.repoKey) +
+        FfiConverterString.allocationSize(value.repoName) +
+        FfiConverterString.allocationSize(value.repoRoot) +
+        FfiConverterString.allocationSize(value.checkoutPath) +
+        FfiConverterBool.allocationSize(value.isLinkedWorktree)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrWorkspaceInfo = {
+  workspaceId: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  paneCount: number;
+  tabCount: number;
+  activeTabId: string;
+  agentStatus: HerdrAgentStatus;
+  tokens?: Map<string, string>;
+  worktree?: HerdrWorkspaceWorktreeInfo;
+};
+
+/**
+ * Generated factory for {@link HerdrWorkspaceInfo} record objects.
+ */
+export const HerdrWorkspaceInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrWorkspaceInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrWorkspaceInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrWorkspaceInfo = (() => {
+  type TypeName = HerdrWorkspaceInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        workspaceId: FfiConverterString.read(from),
+        number: FfiConverterFloat64.read(from),
+        label: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        paneCount: FfiConverterFloat64.read(from),
+        tabCount: FfiConverterFloat64.read(from),
+        activeTabId: FfiConverterString.read(from),
+        agentStatus: FfiConverterTypeHerdrAgentStatus.read(from),
+        tokens: FfiConverterOptionalMapStringString.read(from),
+        worktree: FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterFloat64.write(value.number, into);
+      FfiConverterString.write(value.label, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterFloat64.write(value.paneCount, into);
+      FfiConverterFloat64.write(value.tabCount, into);
+      FfiConverterString.write(value.activeTabId, into);
+      FfiConverterTypeHerdrAgentStatus.write(value.agentStatus, into);
+      FfiConverterOptionalMapStringString.write(value.tokens, into);
+      FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.write(
+        value.worktree,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterFloat64.allocationSize(value.number) +
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterFloat64.allocationSize(value.paneCount) +
+        FfiConverterFloat64.allocationSize(value.tabCount) +
+        FfiConverterString.allocationSize(value.activeTabId) +
+        FfiConverterTypeHerdrAgentStatus.allocationSize(value.agentStatus) +
+        FfiConverterOptionalMapStringString.allocationSize(value.tokens) +
+        FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.allocationSize(
+          value.worktree,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrTabInfo = {
+  tabId: string;
+  workspaceId: string;
+  number: number;
+  label: string;
+  focused: boolean;
+  paneCount: number;
+  agentStatus: HerdrAgentStatus;
+};
+
+/**
+ * Generated factory for {@link HerdrTabInfo} record objects.
+ */
+export const HerdrTabInfo = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrTabInfo, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrTabInfo>,
+  });
+})();
+
+const FfiConverterTypeHerdrTabInfo = (() => {
+  type TypeName = HerdrTabInfo;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        tabId: FfiConverterString.read(from),
+        workspaceId: FfiConverterString.read(from),
+        number: FfiConverterFloat64.read(from),
+        label: FfiConverterString.read(from),
+        focused: FfiConverterBool.read(from),
+        paneCount: FfiConverterFloat64.read(from),
+        agentStatus: FfiConverterTypeHerdrAgentStatus.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.tabId, into);
+      FfiConverterString.write(value.workspaceId, into);
+      FfiConverterFloat64.write(value.number, into);
+      FfiConverterString.write(value.label, into);
+      FfiConverterBool.write(value.focused, into);
+      FfiConverterFloat64.write(value.paneCount, into);
+      FfiConverterTypeHerdrAgentStatus.write(value.agentStatus, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.tabId) +
+        FfiConverterString.allocationSize(value.workspaceId) +
+        FfiConverterFloat64.allocationSize(value.number) +
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterBool.allocationSize(value.focused) +
+        FfiConverterFloat64.allocationSize(value.paneCount) +
+        FfiConverterTypeHerdrAgentStatus.allocationSize(value.agentStatus)
       );
     }
   }
@@ -5153,6 +5158,1226 @@ const FfiConverterTypeHerdrPaneLayoutSnapshot = (() => {
   return new FFIConverter();
 })();
 
+export type HerdrSessionSnapshot = {
+  version: string;
+  protocol: number;
+  focusedWorkspaceId?: string;
+  focusedTabId?: string;
+  focusedPaneId?: string;
+  agents: Array<HerdrAgentInfo>;
+  workspaces: Array<HerdrWorkspaceInfo>;
+  tabs: Array<HerdrTabInfo>;
+  panes: Array<HerdrPaneInfo>;
+  layouts: Array<HerdrPaneLayoutSnapshot>;
+};
+
+/**
+ * Generated factory for {@link HerdrSessionSnapshot} record objects.
+ */
+export const HerdrSessionSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrSessionSnapshot,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrSessionSnapshot>,
+  });
+})();
+
+const FfiConverterTypeHerdrSessionSnapshot = (() => {
+  type TypeName = HerdrSessionSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        version: FfiConverterString.read(from),
+        protocol: FfiConverterUInt32.read(from),
+        focusedWorkspaceId: FfiConverterOptionalString.read(from),
+        focusedTabId: FfiConverterOptionalString.read(from),
+        focusedPaneId: FfiConverterOptionalString.read(from),
+        agents: FfiConverterSequenceTypeHerdrAgentInfo.read(from),
+        workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
+        tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
+        panes: FfiConverterSequenceTypeHerdrPaneInfo.read(from),
+        layouts: FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.version, into);
+      FfiConverterUInt32.write(value.protocol, into);
+      FfiConverterOptionalString.write(value.focusedWorkspaceId, into);
+      FfiConverterOptionalString.write(value.focusedTabId, into);
+      FfiConverterOptionalString.write(value.focusedPaneId, into);
+      FfiConverterSequenceTypeHerdrAgentInfo.write(value.agents, into);
+      FfiConverterSequenceTypeHerdrWorkspaceInfo.write(value.workspaces, into);
+      FfiConverterSequenceTypeHerdrTabInfo.write(value.tabs, into);
+      FfiConverterSequenceTypeHerdrPaneInfo.write(value.panes, into);
+      FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.write(
+        value.layouts,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.version) +
+        FfiConverterUInt32.allocationSize(value.protocol) +
+        FfiConverterOptionalString.allocationSize(value.focusedWorkspaceId) +
+        FfiConverterOptionalString.allocationSize(value.focusedTabId) +
+        FfiConverterOptionalString.allocationSize(value.focusedPaneId) +
+        FfiConverterSequenceTypeHerdrAgentInfo.allocationSize(value.agents) +
+        FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
+          value.workspaces,
+        ) +
+        FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs) +
+        FfiConverterSequenceTypeHerdrPaneInfo.allocationSize(value.panes) +
+        FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.allocationSize(
+          value.layouts,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostStateSnapshot = {
+  revision: bigint;
+  connectionGeneration: bigint;
+  syncGeneration: bigint;
+  syncStatus: HostSyncStatus;
+  freshness: HostFreshness;
+  error?: string;
+  lastSyncedAtMs?: bigint;
+  lastEventAtMs?: bigint;
+  needsResync: boolean;
+  focus: HostServerFocus;
+  snapshot?: HerdrSessionSnapshot;
+};
+
+/**
+ * Generated factory for {@link HostStateSnapshot} record objects.
+ */
+export const HostStateSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostStateSnapshot, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostStateSnapshot>,
+  });
+})();
+
+const FfiConverterTypeHostStateSnapshot = (() => {
+  type TypeName = HostStateSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        connectionGeneration: FfiConverterUInt64.read(from),
+        syncGeneration: FfiConverterUInt64.read(from),
+        syncStatus: FfiConverterTypeHostSyncStatus.read(from),
+        freshness: FfiConverterTypeHostFreshness.read(from),
+        error: FfiConverterOptionalString.read(from),
+        lastSyncedAtMs: FfiConverterOptionalUInt64.read(from),
+        lastEventAtMs: FfiConverterOptionalUInt64.read(from),
+        needsResync: FfiConverterBool.read(from),
+        focus: FfiConverterTypeHostServerFocus.read(from),
+        snapshot: FfiConverterOptionalTypeHerdrSessionSnapshot.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterUInt64.write(value.connectionGeneration, into);
+      FfiConverterUInt64.write(value.syncGeneration, into);
+      FfiConverterTypeHostSyncStatus.write(value.syncStatus, into);
+      FfiConverterTypeHostFreshness.write(value.freshness, into);
+      FfiConverterOptionalString.write(value.error, into);
+      FfiConverterOptionalUInt64.write(value.lastSyncedAtMs, into);
+      FfiConverterOptionalUInt64.write(value.lastEventAtMs, into);
+      FfiConverterBool.write(value.needsResync, into);
+      FfiConverterTypeHostServerFocus.write(value.focus, into);
+      FfiConverterOptionalTypeHerdrSessionSnapshot.write(value.snapshot, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterUInt64.allocationSize(value.connectionGeneration) +
+        FfiConverterUInt64.allocationSize(value.syncGeneration) +
+        FfiConverterTypeHostSyncStatus.allocationSize(value.syncStatus) +
+        FfiConverterTypeHostFreshness.allocationSize(value.freshness) +
+        FfiConverterOptionalString.allocationSize(value.error) +
+        FfiConverterOptionalUInt64.allocationSize(value.lastSyncedAtMs) +
+        FfiConverterOptionalUInt64.allocationSize(value.lastEventAtMs) +
+        FfiConverterBool.allocationSize(value.needsResync) +
+        FfiConverterTypeHostServerFocus.allocationSize(value.focus) +
+        FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
+          value.snapshot,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum TerminalKind {
+  Herdr,
+  Ssh,
+}
+
+const FfiConverterTypeTerminalKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TerminalKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return TerminalKind.Herdr;
+        case 2:
+          return TerminalKind.Ssh;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case TerminalKind.Herdr:
+          return ordinalConverter.write(1, into);
+        case TerminalKind.Ssh:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum TerminalUiState {
+  Connecting,
+  Connected,
+  Disconnected,
+  Error,
+}
+
+const FfiConverterTypeTerminalUiState = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = TerminalUiState;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return TerminalUiState.Connecting;
+        case 2:
+          return TerminalUiState.Connected;
+        case 3:
+          return TerminalUiState.Disconnected;
+        case 4:
+          return TerminalUiState.Error;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case TerminalUiState.Connecting:
+          return ordinalConverter.write(1, into);
+        case TerminalUiState.Connected:
+          return ordinalConverter.write(2, into);
+        case TerminalUiState.Disconnected:
+          return ordinalConverter.write(3, into);
+        case TerminalUiState.Error:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TerminalEntryView = {
+  terminalId: string;
+  paneId: string;
+  title: string;
+  kind: TerminalKind;
+  state: TerminalUiState;
+  error?: string;
+  reconnectAttempt: number;
+};
+
+/**
+ * Generated factory for {@link TerminalEntryView} record objects.
+ */
+export const TerminalEntryView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<TerminalEntryView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TerminalEntryView>,
+  });
+})();
+
+const FfiConverterTypeTerminalEntryView = (() => {
+  type TypeName = TerminalEntryView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        terminalId: FfiConverterString.read(from),
+        paneId: FfiConverterString.read(from),
+        title: FfiConverterString.read(from),
+        kind: FfiConverterTypeTerminalKind.read(from),
+        state: FfiConverterTypeTerminalUiState.read(from),
+        error: FfiConverterOptionalString.read(from),
+        reconnectAttempt: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterString.write(value.paneId, into);
+      FfiConverterString.write(value.title, into);
+      FfiConverterTypeTerminalKind.write(value.kind, into);
+      FfiConverterTypeTerminalUiState.write(value.state, into);
+      FfiConverterOptionalString.write(value.error, into);
+      FfiConverterUInt32.write(value.reconnectAttempt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterString.allocationSize(value.paneId) +
+        FfiConverterString.allocationSize(value.title) +
+        FfiConverterTypeTerminalKind.allocationSize(value.kind) +
+        FfiConverterTypeTerminalUiState.allocationSize(value.state) +
+        FfiConverterOptionalString.allocationSize(value.error) +
+        FfiConverterUInt32.allocationSize(value.reconnectAttempt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TerminalRailView = {
+  terminals: Array<TerminalEntryView>;
+  activeTerminalId?: string;
+};
+
+/**
+ * Generated factory for {@link TerminalRailView} record objects.
+ */
+export const TerminalRailView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<TerminalRailView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<TerminalRailView>,
+  });
+})();
+
+const FfiConverterTypeTerminalRailView = (() => {
+  type TypeName = TerminalRailView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        terminals: FfiConverterSequenceTypeTerminalEntryView.read(from),
+        activeTerminalId: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterSequenceTypeTerminalEntryView.write(value.terminals, into);
+      FfiConverterOptionalString.write(value.activeTerminalId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterSequenceTypeTerminalEntryView.allocationSize(
+          value.terminals,
+        ) + FfiConverterOptionalString.allocationSize(value.activeTerminalId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AppSessionView = {
+  id: string;
+  hostId: string;
+  connectionStatus: AppConnectionStatus;
+  connectionError?: string;
+  reconnectAttempt: number;
+  selection: SessionSelection;
+  hostState?: HostStateSnapshot;
+  terminalRail: TerminalRailView;
+};
+
+/**
+ * Generated factory for {@link AppSessionView} record objects.
+ */
+export const AppSessionView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AppSessionView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AppSessionView>,
+  });
+})();
+
+const FfiConverterTypeAppSessionView = (() => {
+  type TypeName = AppSessionView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        hostId: FfiConverterString.read(from),
+        connectionStatus: FfiConverterTypeAppConnectionStatus.read(from),
+        connectionError: FfiConverterOptionalString.read(from),
+        reconnectAttempt: FfiConverterUInt32.read(from),
+        selection: FfiConverterTypeSessionSelection.read(from),
+        hostState: FfiConverterOptionalTypeHostStateSnapshot.read(from),
+        terminalRail: FfiConverterTypeTerminalRailView.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterTypeAppConnectionStatus.write(value.connectionStatus, into);
+      FfiConverterOptionalString.write(value.connectionError, into);
+      FfiConverterUInt32.write(value.reconnectAttempt, into);
+      FfiConverterTypeSessionSelection.write(value.selection, into);
+      FfiConverterOptionalTypeHostStateSnapshot.write(value.hostState, into);
+      FfiConverterTypeTerminalRailView.write(value.terminalRail, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterTypeAppConnectionStatus.allocationSize(
+          value.connectionStatus,
+        ) +
+        FfiConverterOptionalString.allocationSize(value.connectionError) +
+        FfiConverterUInt32.allocationSize(value.reconnectAttempt) +
+        FfiConverterTypeSessionSelection.allocationSize(value.selection) +
+        FfiConverterOptionalTypeHostStateSnapshot.allocationSize(
+          value.hostState,
+        ) +
+        FfiConverterTypeTerminalRailView.allocationSize(value.terminalRail)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type AppCoreView = {
+  revision: bigint;
+  sessions: Array<AppSessionView>;
+  activeSessionId?: string;
+};
+
+/**
+ * Generated factory for {@link AppCoreView} record objects.
+ */
+export const AppCoreView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AppCoreView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AppCoreView>,
+  });
+})();
+
+const FfiConverterTypeAppCoreView = (() => {
+  type TypeName = AppCoreView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        sessions: FfiConverterSequenceTypeAppSessionView.read(from),
+        activeSessionId: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterSequenceTypeAppSessionView.write(value.sessions, into);
+      FfiConverterOptionalString.write(value.activeSessionId, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterSequenceTypeAppSessionView.allocationSize(value.sessions) +
+        FfiConverterOptionalString.allocationSize(value.activeSessionId)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GitDiffKind {
+  Text,
+  Binary,
+  Empty,
+}
+
+const FfiConverterTypeGitDiffKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GitDiffKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GitDiffKind.Text;
+        case 2:
+          return GitDiffKind.Binary;
+        case 3:
+          return GitDiffKind.Empty;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GitDiffKind.Text:
+          return ordinalConverter.write(1, into);
+        case GitDiffKind.Binary:
+          return ordinalConverter.write(2, into);
+        case GitDiffKind.Empty:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum GitDiffRowKind {
+  Header,
+  Hunk,
+  Context,
+  Addition,
+  Deletion,
+  Meta,
+}
+
+const FfiConverterTypeGitDiffRowKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GitDiffRowKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GitDiffRowKind.Header;
+        case 2:
+          return GitDiffRowKind.Hunk;
+        case 3:
+          return GitDiffRowKind.Context;
+        case 4:
+          return GitDiffRowKind.Addition;
+        case 5:
+          return GitDiffRowKind.Deletion;
+        case 6:
+          return GitDiffRowKind.Meta;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GitDiffRowKind.Header:
+          return ordinalConverter.write(1, into);
+        case GitDiffRowKind.Hunk:
+          return ordinalConverter.write(2, into);
+        case GitDiffRowKind.Context:
+          return ordinalConverter.write(3, into);
+        case GitDiffRowKind.Addition:
+          return ordinalConverter.write(4, into);
+        case GitDiffRowKind.Deletion:
+          return ordinalConverter.write(5, into);
+        case GitDiffRowKind.Meta:
+          return ordinalConverter.write(6, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitDiffRow = {
+  key: string;
+  kind: GitDiffRowKind;
+  content: string;
+  marker: string;
+  oldLine?: number;
+  newLine?: number;
+};
+
+/**
+ * Generated factory for {@link GitDiffRow} record objects.
+ */
+export const GitDiffRow = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitDiffRow, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitDiffRow>,
+  });
+})();
+
+const FfiConverterTypeGitDiffRow = (() => {
+  type TypeName = GitDiffRow;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        kind: FfiConverterTypeGitDiffRowKind.read(from),
+        content: FfiConverterString.read(from),
+        marker: FfiConverterString.read(from),
+        oldLine: FfiConverterOptionalUInt32.read(from),
+        newLine: FfiConverterOptionalUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterTypeGitDiffRowKind.write(value.kind, into);
+      FfiConverterString.write(value.content, into);
+      FfiConverterString.write(value.marker, into);
+      FfiConverterOptionalUInt32.write(value.oldLine, into);
+      FfiConverterOptionalUInt32.write(value.newLine, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterTypeGitDiffRowKind.allocationSize(value.kind) +
+        FfiConverterString.allocationSize(value.content) +
+        FfiConverterString.allocationSize(value.marker) +
+        FfiConverterOptionalUInt32.allocationSize(value.oldLine) +
+        FfiConverterOptionalUInt32.allocationSize(value.newLine)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitDiff = {
+  kind: GitDiffKind;
+  rows: Array<GitDiffRow>;
+  truncated: boolean;
+};
+
+/**
+ * Generated factory for {@link GitDiff} record objects.
+ */
+export const GitDiff = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitDiff, ReturnType<typeof defaults>>(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitDiff>,
+  });
+})();
+
+const FfiConverterTypeGitDiff = (() => {
+  type TypeName = GitDiff;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterTypeGitDiffKind.read(from),
+        rows: FfiConverterSequenceTypeGitDiffRow.read(from),
+        truncated: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeGitDiffKind.write(value.kind, into);
+      FfiConverterSequenceTypeGitDiffRow.write(value.rows, into);
+      FfiConverterBool.write(value.truncated, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeGitDiffKind.allocationSize(value.kind) +
+        FfiConverterSequenceTypeGitDiffRow.allocationSize(value.rows) +
+        FfiConverterBool.allocationSize(value.truncated)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitRepository = {
+  root: string;
+  hasHead: boolean;
+};
+
+/**
+ * Generated factory for {@link GitRepository} record objects.
+ */
+export const GitRepository = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitRepository, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitRepository>,
+  });
+})();
+
+const FfiConverterTypeGitRepository = (() => {
+  type TypeName = GitRepository;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        root: FfiConverterString.read(from),
+        hasHead: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.root, into);
+      FfiConverterBool.write(value.hasHead, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.root) +
+        FfiConverterBool.allocationSize(value.hasHead)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitStatusEntry = {
+  indexStatus: string;
+  worktreeStatus: string;
+  path: string;
+  originalPath?: string;
+  absolutePath: string;
+};
+
+/**
+ * Generated factory for {@link GitStatusEntry} record objects.
+ */
+export const GitStatusEntry = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitStatusEntry, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitStatusEntry>,
+  });
+})();
+
+const FfiConverterTypeGitStatusEntry = (() => {
+  type TypeName = GitStatusEntry;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        indexStatus: FfiConverterString.read(from),
+        worktreeStatus: FfiConverterString.read(from),
+        path: FfiConverterString.read(from),
+        originalPath: FfiConverterOptionalString.read(from),
+        absolutePath: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.indexStatus, into);
+      FfiConverterString.write(value.worktreeStatus, into);
+      FfiConverterString.write(value.path, into);
+      FfiConverterOptionalString.write(value.originalPath, into);
+      FfiConverterString.write(value.absolutePath, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.indexStatus) +
+        FfiConverterString.allocationSize(value.worktreeStatus) +
+        FfiConverterString.allocationSize(value.path) +
+        FfiConverterOptionalString.allocationSize(value.originalPath) +
+        FfiConverterString.allocationSize(value.absolutePath)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdAgentView = {
+  hostId: string;
+  hostLabel: string;
+  agent: HerdrAgentInfo;
+  workspaceLabel: string;
+  tabLabel: string;
+  primaryLabel: string;
+};
+
+/**
+ * Generated factory for {@link HerdAgentView} record objects.
+ */
+export const HerdAgentView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdAgentView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdAgentView>,
+  });
+})();
+
+const FfiConverterTypeHerdAgentView = (() => {
+  type TypeName = HerdAgentView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostId: FfiConverterString.read(from),
+        hostLabel: FfiConverterString.read(from),
+        agent: FfiConverterTypeHerdrAgentInfo.read(from),
+        workspaceLabel: FfiConverterString.read(from),
+        tabLabel: FfiConverterString.read(from),
+        primaryLabel: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostId, into);
+      FfiConverterString.write(value.hostLabel, into);
+      FfiConverterTypeHerdrAgentInfo.write(value.agent, into);
+      FfiConverterString.write(value.workspaceLabel, into);
+      FfiConverterString.write(value.tabLabel, into);
+      FfiConverterString.write(value.primaryLabel, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostId) +
+        FfiConverterString.allocationSize(value.hostLabel) +
+        FfiConverterTypeHerdrAgentInfo.allocationSize(value.agent) +
+        FfiConverterString.allocationSize(value.workspaceLabel) +
+        FfiConverterString.allocationSize(value.tabLabel) +
+        FfiConverterString.allocationSize(value.primaryLabel)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdHostView = {
+  id: string;
+  label: string;
+  address: string;
+  connected: boolean;
+  running: boolean;
+  refreshing: boolean;
+  agentStatus: HerdrAgentStatus;
+  agents: Array<HerdrAgentInfo>;
+  workspaces: Array<HerdrWorkspaceInfo>;
+  tabs: Array<HerdrTabInfo>;
+};
+
+/**
+ * Generated factory for {@link HerdHostView} record objects.
+ */
+export const HerdHostView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdHostView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdHostView>,
+  });
+})();
+
+const FfiConverterTypeHerdHostView = (() => {
+  type TypeName = HerdHostView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        label: FfiConverterString.read(from),
+        address: FfiConverterString.read(from),
+        connected: FfiConverterBool.read(from),
+        running: FfiConverterBool.read(from),
+        refreshing: FfiConverterBool.read(from),
+        agentStatus: FfiConverterTypeHerdrAgentStatus.read(from),
+        agents: FfiConverterSequenceTypeHerdrAgentInfo.read(from),
+        workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
+        tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.label, into);
+      FfiConverterString.write(value.address, into);
+      FfiConverterBool.write(value.connected, into);
+      FfiConverterBool.write(value.running, into);
+      FfiConverterBool.write(value.refreshing, into);
+      FfiConverterTypeHerdrAgentStatus.write(value.agentStatus, into);
+      FfiConverterSequenceTypeHerdrAgentInfo.write(value.agents, into);
+      FfiConverterSequenceTypeHerdrWorkspaceInfo.write(value.workspaces, into);
+      FfiConverterSequenceTypeHerdrTabInfo.write(value.tabs, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterString.allocationSize(value.address) +
+        FfiConverterBool.allocationSize(value.connected) +
+        FfiConverterBool.allocationSize(value.running) +
+        FfiConverterBool.allocationSize(value.refreshing) +
+        FfiConverterTypeHerdrAgentStatus.allocationSize(value.agentStatus) +
+        FfiConverterSequenceTypeHerdrAgentInfo.allocationSize(value.agents) +
+        FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
+          value.workspaces,
+        ) +
+        FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdSessionMetadata = {
+  sessionId: string;
+  hostLabel: string;
+  address: string;
+};
+
+/**
+ * Generated factory for {@link HerdSessionMetadata} record objects.
+ */
+export const HerdSessionMetadata = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdSessionMetadata, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdSessionMetadata>,
+  });
+})();
+
+const FfiConverterTypeHerdSessionMetadata = (() => {
+  type TypeName = HerdSessionMetadata;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        sessionId: FfiConverterString.read(from),
+        hostLabel: FfiConverterString.read(from),
+        address: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.sessionId, into);
+      FfiConverterString.write(value.hostLabel, into);
+      FfiConverterString.write(value.address, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.sessionId) +
+        FfiConverterString.allocationSize(value.hostLabel) +
+        FfiConverterString.allocationSize(value.address)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdView = {
+  revision: bigint;
+  selectedHostId?: string;
+  selectedWorkspaceId?: string;
+  hosts: Array<HerdHostView>;
+  agents: Array<HerdAgentView>;
+};
+
+/**
+ * Generated factory for {@link HerdView} record objects.
+ */
+export const HerdView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdView, ReturnType<typeof defaults>>(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdView>,
+  });
+})();
+
+const FfiConverterTypeHerdView = (() => {
+  type TypeName = HerdView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        selectedHostId: FfiConverterOptionalString.read(from),
+        selectedWorkspaceId: FfiConverterOptionalString.read(from),
+        hosts: FfiConverterSequenceTypeHerdHostView.read(from),
+        agents: FfiConverterSequenceTypeHerdAgentView.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterOptionalString.write(value.selectedHostId, into);
+      FfiConverterOptionalString.write(value.selectedWorkspaceId, into);
+      FfiConverterSequenceTypeHerdHostView.write(value.hosts, into);
+      FfiConverterSequenceTypeHerdAgentView.write(value.agents, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterOptionalString.allocationSize(value.selectedHostId) +
+        FfiConverterOptionalString.allocationSize(value.selectedWorkspaceId) +
+        FfiConverterSequenceTypeHerdHostView.allocationSize(value.hosts) +
+        FfiConverterSequenceTypeHerdAgentView.allocationSize(value.agents)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HerdrControlFailureKind {
+  TransportDisconnected,
+  MalformedResponse,
+  ProtocolError,
+  UnsupportedResponse,
+  InvalidField,
+  RequestCancelled,
+  RequestTimeout,
+}
+
+const FfiConverterTypeHerdrControlFailureKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrControlFailureKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrControlFailureKind.TransportDisconnected;
+        case 2:
+          return HerdrControlFailureKind.MalformedResponse;
+        case 3:
+          return HerdrControlFailureKind.ProtocolError;
+        case 4:
+          return HerdrControlFailureKind.UnsupportedResponse;
+        case 5:
+          return HerdrControlFailureKind.InvalidField;
+        case 6:
+          return HerdrControlFailureKind.RequestCancelled;
+        case 7:
+          return HerdrControlFailureKind.RequestTimeout;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrControlFailureKind.TransportDisconnected:
+          return ordinalConverter.write(1, into);
+        case HerdrControlFailureKind.MalformedResponse:
+          return ordinalConverter.write(2, into);
+        case HerdrControlFailureKind.ProtocolError:
+          return ordinalConverter.write(3, into);
+        case HerdrControlFailureKind.UnsupportedResponse:
+          return ordinalConverter.write(4, into);
+        case HerdrControlFailureKind.InvalidField:
+          return ordinalConverter.write(5, into);
+        case HerdrControlFailureKind.RequestCancelled:
+          return ordinalConverter.write(6, into);
+        case HerdrControlFailureKind.RequestTimeout:
+          return ordinalConverter.write(7, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrControlFailure = {
+  kind: HerdrControlFailureKind;
+  code?: string;
+  message: string;
+};
+
+/**
+ * Generated factory for {@link HerdrControlFailure} record objects.
+ */
+export const HerdrControlFailure = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HerdrControlFailure, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HerdrControlFailure>,
+  });
+})();
+
+const FfiConverterTypeHerdrControlFailure = (() => {
+  type TypeName = HerdrControlFailure;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterTypeHerdrControlFailureKind.read(from),
+        code: FfiConverterOptionalString.read(from),
+        message: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeHerdrControlFailureKind.write(value.kind, into);
+      FfiConverterOptionalString.write(value.code, into);
+      FfiConverterString.write(value.message, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeHerdrControlFailureKind.allocationSize(value.kind) +
+        FfiConverterOptionalString.allocationSize(value.code) +
+        FfiConverterString.allocationSize(value.message)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HerdrAgentKind {
+  Claude,
+  Codex,
+  OpenCode,
+}
+
+const FfiConverterTypeHerdrAgentKind = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HerdrAgentKind;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HerdrAgentKind.Claude;
+        case 2:
+          return HerdrAgentKind.Codex;
+        case 3:
+          return HerdrAgentKind.OpenCode;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HerdrAgentKind.Claude:
+          return ordinalConverter.write(1, into);
+        case HerdrAgentKind.Codex:
+          return ordinalConverter.write(2, into);
+        case HerdrAgentKind.OpenCode:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HerdrIntegrationInstallResult = {
+  kind: HerdrAgentKind;
+  messages: Array<string>;
+};
+
+/**
+ * Generated factory for {@link HerdrIntegrationInstallResult} record objects.
+ */
+export const HerdrIntegrationInstallResult = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HerdrIntegrationInstallResult,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<HerdrIntegrationInstallResult>,
+  });
+})();
+
+const FfiConverterTypeHerdrIntegrationInstallResult = (() => {
+  type TypeName = HerdrIntegrationInstallResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        kind: FfiConverterTypeHerdrAgentKind.read(from),
+        messages: FfiConverterSequenceString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeHerdrAgentKind.write(value.kind, into);
+      FfiConverterSequenceString.write(value.messages, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeHerdrAgentKind.allocationSize(value.kind) +
+        FfiConverterSequenceString.allocationSize(value.messages)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum HerdrPaneReadSource {
   Visible,
   Recent,
@@ -5410,297 +6635,6 @@ const FfiConverterTypeHerdrPaneZoomResult = (() => {
   return new FFIConverter();
 })();
 
-export type HerdrWorkspaceWorktreeInfo = {
-  repoKey: string;
-  repoName: string;
-  repoRoot: string;
-  checkoutPath: string;
-  isLinkedWorktree: boolean;
-};
-
-/**
- * Generated factory for {@link HerdrWorkspaceWorktreeInfo} record objects.
- */
-export const HerdrWorkspaceWorktreeInfo = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      HerdrWorkspaceWorktreeInfo,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () =>
-      Object.freeze(defaults()) as Partial<HerdrWorkspaceWorktreeInfo>,
-  });
-})();
-
-const FfiConverterTypeHerdrWorkspaceWorktreeInfo = (() => {
-  type TypeName = HerdrWorkspaceWorktreeInfo;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        repoKey: FfiConverterString.read(from),
-        repoName: FfiConverterString.read(from),
-        repoRoot: FfiConverterString.read(from),
-        checkoutPath: FfiConverterString.read(from),
-        isLinkedWorktree: FfiConverterBool.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.repoKey, into);
-      FfiConverterString.write(value.repoName, into);
-      FfiConverterString.write(value.repoRoot, into);
-      FfiConverterString.write(value.checkoutPath, into);
-      FfiConverterBool.write(value.isLinkedWorktree, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.repoKey) +
-        FfiConverterString.allocationSize(value.repoName) +
-        FfiConverterString.allocationSize(value.repoRoot) +
-        FfiConverterString.allocationSize(value.checkoutPath) +
-        FfiConverterBool.allocationSize(value.isLinkedWorktree)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HerdrWorkspaceInfo = {
-  workspaceId: string;
-  number: number;
-  label: string;
-  focused: boolean;
-  paneCount: number;
-  tabCount: number;
-  activeTabId: string;
-  agentStatus: HerdrAgentStatus;
-  tokens?: Map<string, string>;
-  worktree?: HerdrWorkspaceWorktreeInfo;
-};
-
-/**
- * Generated factory for {@link HerdrWorkspaceInfo} record objects.
- */
-export const HerdrWorkspaceInfo = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HerdrWorkspaceInfo, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HerdrWorkspaceInfo>,
-  });
-})();
-
-const FfiConverterTypeHerdrWorkspaceInfo = (() => {
-  type TypeName = HerdrWorkspaceInfo;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        workspaceId: FfiConverterString.read(from),
-        number: FfiConverterFloat64.read(from),
-        label: FfiConverterString.read(from),
-        focused: FfiConverterBool.read(from),
-        paneCount: FfiConverterFloat64.read(from),
-        tabCount: FfiConverterFloat64.read(from),
-        activeTabId: FfiConverterString.read(from),
-        agentStatus: FfiConverterTypeHerdrAgentStatus.read(from),
-        tokens: FfiConverterOptionalMapStringString.read(from),
-        worktree: FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.workspaceId, into);
-      FfiConverterFloat64.write(value.number, into);
-      FfiConverterString.write(value.label, into);
-      FfiConverterBool.write(value.focused, into);
-      FfiConverterFloat64.write(value.paneCount, into);
-      FfiConverterFloat64.write(value.tabCount, into);
-      FfiConverterString.write(value.activeTabId, into);
-      FfiConverterTypeHerdrAgentStatus.write(value.agentStatus, into);
-      FfiConverterOptionalMapStringString.write(value.tokens, into);
-      FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.write(
-        value.worktree,
-        into,
-      );
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.workspaceId) +
-        FfiConverterFloat64.allocationSize(value.number) +
-        FfiConverterString.allocationSize(value.label) +
-        FfiConverterBool.allocationSize(value.focused) +
-        FfiConverterFloat64.allocationSize(value.paneCount) +
-        FfiConverterFloat64.allocationSize(value.tabCount) +
-        FfiConverterString.allocationSize(value.activeTabId) +
-        FfiConverterTypeHerdrAgentStatus.allocationSize(value.agentStatus) +
-        FfiConverterOptionalMapStringString.allocationSize(value.tokens) +
-        FfiConverterOptionalTypeHerdrWorkspaceWorktreeInfo.allocationSize(
-          value.worktree,
-        )
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HerdrTabInfo = {
-  tabId: string;
-  workspaceId: string;
-  number: number;
-  label: string;
-  focused: boolean;
-  paneCount: number;
-  agentStatus: HerdrAgentStatus;
-};
-
-/**
- * Generated factory for {@link HerdrTabInfo} record objects.
- */
-export const HerdrTabInfo = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HerdrTabInfo, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HerdrTabInfo>,
-  });
-})();
-
-const FfiConverterTypeHerdrTabInfo = (() => {
-  type TypeName = HerdrTabInfo;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        tabId: FfiConverterString.read(from),
-        workspaceId: FfiConverterString.read(from),
-        number: FfiConverterFloat64.read(from),
-        label: FfiConverterString.read(from),
-        focused: FfiConverterBool.read(from),
-        paneCount: FfiConverterFloat64.read(from),
-        agentStatus: FfiConverterTypeHerdrAgentStatus.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.tabId, into);
-      FfiConverterString.write(value.workspaceId, into);
-      FfiConverterFloat64.write(value.number, into);
-      FfiConverterString.write(value.label, into);
-      FfiConverterBool.write(value.focused, into);
-      FfiConverterFloat64.write(value.paneCount, into);
-      FfiConverterTypeHerdrAgentStatus.write(value.agentStatus, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.tabId) +
-        FfiConverterString.allocationSize(value.workspaceId) +
-        FfiConverterFloat64.allocationSize(value.number) +
-        FfiConverterString.allocationSize(value.label) +
-        FfiConverterBool.allocationSize(value.focused) +
-        FfiConverterFloat64.allocationSize(value.paneCount) +
-        FfiConverterTypeHerdrAgentStatus.allocationSize(value.agentStatus)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HerdrSessionSnapshot = {
-  version: string;
-  protocol: number;
-  focusedWorkspaceId?: string;
-  focusedTabId?: string;
-  focusedPaneId?: string;
-  agents: Array<HerdrAgentInfo>;
-  workspaces: Array<HerdrWorkspaceInfo>;
-  tabs: Array<HerdrTabInfo>;
-  panes: Array<HerdrPaneInfo>;
-  layouts: Array<HerdrPaneLayoutSnapshot>;
-};
-
-/**
- * Generated factory for {@link HerdrSessionSnapshot} record objects.
- */
-export const HerdrSessionSnapshot = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<
-      HerdrSessionSnapshot,
-      ReturnType<typeof defaults>
-    >(defaults);
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HerdrSessionSnapshot>,
-  });
-})();
-
-const FfiConverterTypeHerdrSessionSnapshot = (() => {
-  type TypeName = HerdrSessionSnapshot;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        version: FfiConverterString.read(from),
-        protocol: FfiConverterUInt32.read(from),
-        focusedWorkspaceId: FfiConverterOptionalString.read(from),
-        focusedTabId: FfiConverterOptionalString.read(from),
-        focusedPaneId: FfiConverterOptionalString.read(from),
-        agents: FfiConverterSequenceTypeHerdrAgentInfo.read(from),
-        workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
-        tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
-        panes: FfiConverterSequenceTypeHerdrPaneInfo.read(from),
-        layouts: FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.version, into);
-      FfiConverterUInt32.write(value.protocol, into);
-      FfiConverterOptionalString.write(value.focusedWorkspaceId, into);
-      FfiConverterOptionalString.write(value.focusedTabId, into);
-      FfiConverterOptionalString.write(value.focusedPaneId, into);
-      FfiConverterSequenceTypeHerdrAgentInfo.write(value.agents, into);
-      FfiConverterSequenceTypeHerdrWorkspaceInfo.write(value.workspaces, into);
-      FfiConverterSequenceTypeHerdrTabInfo.write(value.tabs, into);
-      FfiConverterSequenceTypeHerdrPaneInfo.write(value.panes, into);
-      FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.write(
-        value.layouts,
-        into,
-      );
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.version) +
-        FfiConverterUInt32.allocationSize(value.protocol) +
-        FfiConverterOptionalString.allocationSize(value.focusedWorkspaceId) +
-        FfiConverterOptionalString.allocationSize(value.focusedTabId) +
-        FfiConverterOptionalString.allocationSize(value.focusedPaneId) +
-        FfiConverterSequenceTypeHerdrAgentInfo.allocationSize(value.agents) +
-        FfiConverterSequenceTypeHerdrWorkspaceInfo.allocationSize(
-          value.workspaces,
-        ) +
-        FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs) +
-        FfiConverterSequenceTypeHerdrPaneInfo.allocationSize(value.panes) +
-        FfiConverterSequenceTypeHerdrPaneLayoutSnapshot.allocationSize(
-          value.layouts,
-        )
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
 export type HerdrWorktreeInfo = {
   branch?: string;
   isBare: boolean;
@@ -5872,6 +6806,183 @@ const FfiConverterTypeHostLatencyMeasurement = (() => {
         FfiConverterFloat64.allocationSize(value.sshRttMs) +
         FfiConverterFloat64.allocationSize(value.totalMs) +
         FfiConverterFloat64.allocationSize(value.runtimeOverheadMs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum HostAuthMode {
+  Password,
+  Key,
+}
+
+const FfiConverterTypeHostAuthMode = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostAuthMode;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostAuthMode.Password;
+        case 2:
+          return HostAuthMode.Key;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostAuthMode.Password:
+          return ordinalConverter.write(1, into);
+        case HostAuthMode.Key:
+          return ordinalConverter.write(2, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostProfileRecord = {
+  id: string;
+  name: string;
+  host: string;
+  port: string;
+  username: string;
+  jumpHostId?: string;
+  forwardAgent: boolean;
+  authMode: HostAuthMode;
+  herdrCommand: string;
+  herdrSocketPath: string;
+  sessionName: string;
+  createdAt: string;
+  updatedAt: string;
+  lastConnectedAt?: string;
+};
+
+/**
+ * Generated factory for {@link HostProfileRecord} record objects.
+ */
+export const HostProfileRecord = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<HostProfileRecord, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostProfileRecord>,
+  });
+})();
+
+const FfiConverterTypeHostProfileRecord = (() => {
+  type TypeName = HostProfileRecord;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        name: FfiConverterString.read(from),
+        host: FfiConverterString.read(from),
+        port: FfiConverterString.read(from),
+        username: FfiConverterString.read(from),
+        jumpHostId: FfiConverterOptionalString.read(from),
+        forwardAgent: FfiConverterBool.read(from),
+        authMode: FfiConverterTypeHostAuthMode.read(from),
+        herdrCommand: FfiConverterString.read(from),
+        herdrSocketPath: FfiConverterString.read(from),
+        sessionName: FfiConverterString.read(from),
+        createdAt: FfiConverterString.read(from),
+        updatedAt: FfiConverterString.read(from),
+        lastConnectedAt: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.name, into);
+      FfiConverterString.write(value.host, into);
+      FfiConverterString.write(value.port, into);
+      FfiConverterString.write(value.username, into);
+      FfiConverterOptionalString.write(value.jumpHostId, into);
+      FfiConverterBool.write(value.forwardAgent, into);
+      FfiConverterTypeHostAuthMode.write(value.authMode, into);
+      FfiConverterString.write(value.herdrCommand, into);
+      FfiConverterString.write(value.herdrSocketPath, into);
+      FfiConverterString.write(value.sessionName, into);
+      FfiConverterString.write(value.createdAt, into);
+      FfiConverterString.write(value.updatedAt, into);
+      FfiConverterOptionalString.write(value.lastConnectedAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.name) +
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterString.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.username) +
+        FfiConverterOptionalString.allocationSize(value.jumpHostId) +
+        FfiConverterBool.allocationSize(value.forwardAgent) +
+        FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
+        FfiConverterString.allocationSize(value.herdrCommand) +
+        FfiConverterString.allocationSize(value.herdrSocketPath) +
+        FfiConverterString.allocationSize(value.sessionName) +
+        FfiConverterString.allocationSize(value.createdAt) +
+        FfiConverterString.allocationSize(value.updatedAt) +
+        FfiConverterOptionalString.allocationSize(value.lastConnectedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type HostProfileStoreView = {
+  revision: bigint;
+  hosts: Array<HostProfileRecord>;
+  persistedValue: string;
+};
+
+/**
+ * Generated factory for {@link HostProfileStoreView} record objects.
+ */
+export const HostProfileStoreView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      HostProfileStoreView,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<HostProfileStoreView>,
+  });
+})();
+
+const FfiConverterTypeHostProfileStoreView = (() => {
+  type TypeName = HostProfileStoreView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        hosts: FfiConverterSequenceTypeHostProfileRecord.read(from),
+        persistedValue: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterSequenceTypeHostProfileRecord.write(value.hosts, into);
+      FfiConverterString.write(value.persistedValue, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterSequenceTypeHostProfileRecord.allocationSize(value.hosts) +
+        FfiConverterString.allocationSize(value.persistedValue)
       );
     }
   }
@@ -6242,226 +7353,6 @@ const FfiConverterTypeHostRuntimeStatus = (() => {
   return new FFIConverter();
 })();
 
-export type HostServerFocus = {
-  workspaceId?: string;
-  tabId?: string;
-  paneId?: string;
-};
-
-/**
- * Generated factory for {@link HostServerFocus} record objects.
- */
-export const HostServerFocus = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HostServerFocus, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HostServerFocus>,
-  });
-})();
-
-const FfiConverterTypeHostServerFocus = (() => {
-  type TypeName = HostServerFocus;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        workspaceId: FfiConverterOptionalString.read(from),
-        tabId: FfiConverterOptionalString.read(from),
-        paneId: FfiConverterOptionalString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterOptionalString.write(value.workspaceId, into);
-      FfiConverterOptionalString.write(value.tabId, into);
-      FfiConverterOptionalString.write(value.paneId, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterOptionalString.allocationSize(value.workspaceId) +
-        FfiConverterOptionalString.allocationSize(value.tabId) +
-        FfiConverterOptionalString.allocationSize(value.paneId)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HostSyncStatus {
-  Idle,
-  Syncing,
-  Synced,
-  Error,
-}
-
-const FfiConverterTypeHostSyncStatus = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HostSyncStatus;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HostSyncStatus.Idle;
-        case 2:
-          return HostSyncStatus.Syncing;
-        case 3:
-          return HostSyncStatus.Synced;
-        case 4:
-          return HostSyncStatus.Error;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HostSyncStatus.Idle:
-          return ordinalConverter.write(1, into);
-        case HostSyncStatus.Syncing:
-          return ordinalConverter.write(2, into);
-        case HostSyncStatus.Synced:
-          return ordinalConverter.write(3, into);
-        case HostSyncStatus.Error:
-          return ordinalConverter.write(4, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export enum HostFreshness {
-  Loading,
-  Fresh,
-  Stale,
-  Unavailable,
-}
-
-const FfiConverterTypeHostFreshness = (() => {
-  const ordinalConverter = FfiConverterInt32;
-  type TypeName = HostFreshness;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
-        case 1:
-          return HostFreshness.Loading;
-        case 2:
-          return HostFreshness.Fresh;
-        case 3:
-          return HostFreshness.Stale;
-        case 4:
-          return HostFreshness.Unavailable;
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      switch (value) {
-        case HostFreshness.Loading:
-          return ordinalConverter.write(1, into);
-        case HostFreshness.Fresh:
-          return ordinalConverter.write(2, into);
-        case HostFreshness.Stale:
-          return ordinalConverter.write(3, into);
-        case HostFreshness.Unavailable:
-          return ordinalConverter.write(4, into);
-      }
-    }
-    allocationSize(value: TypeName): number {
-      return ordinalConverter.allocationSize(0);
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type HostStateSnapshot = {
-  revision: bigint;
-  connectionGeneration: bigint;
-  syncGeneration: bigint;
-  syncStatus: HostSyncStatus;
-  freshness: HostFreshness;
-  error?: string;
-  lastSyncedAtMs?: bigint;
-  lastEventAtMs?: bigint;
-  needsResync: boolean;
-  focus: HostServerFocus;
-  snapshot?: HerdrSessionSnapshot;
-};
-
-/**
- * Generated factory for {@link HostStateSnapshot} record objects.
- */
-export const HostStateSnapshot = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<HostStateSnapshot, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<HostStateSnapshot>,
-  });
-})();
-
-const FfiConverterTypeHostStateSnapshot = (() => {
-  type TypeName = HostStateSnapshot;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        revision: FfiConverterUInt64.read(from),
-        connectionGeneration: FfiConverterUInt64.read(from),
-        syncGeneration: FfiConverterUInt64.read(from),
-        syncStatus: FfiConverterTypeHostSyncStatus.read(from),
-        freshness: FfiConverterTypeHostFreshness.read(from),
-        error: FfiConverterOptionalString.read(from),
-        lastSyncedAtMs: FfiConverterOptionalUInt64.read(from),
-        lastEventAtMs: FfiConverterOptionalUInt64.read(from),
-        needsResync: FfiConverterBool.read(from),
-        focus: FfiConverterTypeHostServerFocus.read(from),
-        snapshot: FfiConverterOptionalTypeHerdrSessionSnapshot.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterUInt64.write(value.revision, into);
-      FfiConverterUInt64.write(value.connectionGeneration, into);
-      FfiConverterUInt64.write(value.syncGeneration, into);
-      FfiConverterTypeHostSyncStatus.write(value.syncStatus, into);
-      FfiConverterTypeHostFreshness.write(value.freshness, into);
-      FfiConverterOptionalString.write(value.error, into);
-      FfiConverterOptionalUInt64.write(value.lastSyncedAtMs, into);
-      FfiConverterOptionalUInt64.write(value.lastEventAtMs, into);
-      FfiConverterBool.write(value.needsResync, into);
-      FfiConverterTypeHostServerFocus.write(value.focus, into);
-      FfiConverterOptionalTypeHerdrSessionSnapshot.write(value.snapshot, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterUInt64.allocationSize(value.revision) +
-        FfiConverterUInt64.allocationSize(value.connectionGeneration) +
-        FfiConverterUInt64.allocationSize(value.syncGeneration) +
-        FfiConverterTypeHostSyncStatus.allocationSize(value.syncStatus) +
-        FfiConverterTypeHostFreshness.allocationSize(value.freshness) +
-        FfiConverterOptionalString.allocationSize(value.error) +
-        FfiConverterOptionalUInt64.allocationSize(value.lastSyncedAtMs) +
-        FfiConverterOptionalUInt64.allocationSize(value.lastEventAtMs) +
-        FfiConverterBool.allocationSize(value.needsResync) +
-        FfiConverterTypeHostServerFocus.allocationSize(value.focus) +
-        FfiConverterOptionalTypeHerdrSessionSnapshot.allocationSize(
-          value.snapshot,
-        )
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
 export type HostTerminalGeometry = {
   columns: number;
   rows: number;
@@ -6510,6 +7401,169 @@ const FfiConverterTypeHostTerminalGeometry = (() => {
         FfiConverterUInt32.allocationSize(value.rows) +
         FfiConverterUInt32.allocationSize(value.cellWidthPx) +
         FfiConverterUInt32.allocationSize(value.cellHeightPx)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type KnownHostRecord = {
+  id: string;
+  host: string;
+  port: number;
+  keyType: string;
+  publicKey: string;
+  fingerprint: string;
+  createdAt: string;
+};
+
+/**
+ * Generated factory for {@link KnownHostRecord} record objects.
+ */
+export const KnownHostRecord = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<KnownHostRecord, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<KnownHostRecord>,
+  });
+})();
+
+const FfiConverterTypeKnownHostRecord = (() => {
+  type TypeName = KnownHostRecord;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        host: FfiConverterString.read(from),
+        port: FfiConverterUInt16.read(from),
+        keyType: FfiConverterString.read(from),
+        publicKey: FfiConverterString.read(from),
+        fingerprint: FfiConverterString.read(from),
+        createdAt: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.host, into);
+      FfiConverterUInt16.write(value.port, into);
+      FfiConverterString.write(value.keyType, into);
+      FfiConverterString.write(value.publicKey, into);
+      FfiConverterString.write(value.fingerprint, into);
+      FfiConverterString.write(value.createdAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.host) +
+        FfiConverterUInt16.allocationSize(value.port) +
+        FfiConverterString.allocationSize(value.keyType) +
+        FfiConverterString.allocationSize(value.publicKey) +
+        FfiConverterString.allocationSize(value.fingerprint) +
+        FfiConverterString.allocationSize(value.createdAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type KnownHostStoreView = {
+  revision: bigint;
+  hosts: Array<KnownHostRecord>;
+  persistedValue: string;
+};
+
+/**
+ * Generated factory for {@link KnownHostStoreView} record objects.
+ */
+export const KnownHostStoreView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<KnownHostStoreView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<KnownHostStoreView>,
+  });
+})();
+
+const FfiConverterTypeKnownHostStoreView = (() => {
+  type TypeName = KnownHostStoreView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        hosts: FfiConverterSequenceTypeKnownHostRecord.read(from),
+        persistedValue: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterSequenceTypeKnownHostRecord.write(value.hosts, into);
+      FfiConverterString.write(value.persistedValue, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterSequenceTypeKnownHostRecord.allocationSize(value.hosts) +
+        FfiConverterString.allocationSize(value.persistedValue)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type KnownHostMutation = {
+  token: bigint;
+  changed: boolean;
+  view: KnownHostStoreView;
+};
+
+/**
+ * Generated factory for {@link KnownHostMutation} record objects.
+ */
+export const KnownHostMutation = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<KnownHostMutation, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<KnownHostMutation>,
+  });
+})();
+
+const FfiConverterTypeKnownHostMutation = (() => {
+  type TypeName = KnownHostMutation;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        token: FfiConverterUInt64.read(from),
+        changed: FfiConverterBool.read(from),
+        view: FfiConverterTypeKnownHostStoreView.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.token, into);
+      FfiConverterBool.write(value.changed, into);
+      FfiConverterTypeKnownHostStoreView.write(value.view, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.token) +
+        FfiConverterBool.allocationSize(value.changed) +
+        FfiConverterTypeKnownHostStoreView.allocationSize(value.view)
       );
     }
   }
@@ -13799,6 +14853,416 @@ const FfiConverterTypeHerdrTerminalControlEvent = (() => {
   return new FFIConverter();
 })();
 
+// Error type: HostProfileStoreError
+export enum HostProfileStoreError_Tags {
+  MalformedPersistedData = 'MalformedPersistedData',
+  EmptyId = 'EmptyId',
+  EmptyHost = 'EmptyHost',
+  EmptyUsername = 'EmptyUsername',
+  InvalidPort = 'InvalidPort',
+  MissingHost = 'MissingHost',
+  MissingJumpHost = 'MissingJumpHost',
+  JumpHostCycle = 'JumpHostCycle',
+}
+export const HostProfileStoreError = (() => {
+  type MalformedPersistedData__interface = {
+    tag: HostProfileStoreError_Tags.MalformedPersistedData;
+    inner: Readonly<[string]>;
+  };
+  class MalformedPersistedData_
+    extends UniffiError
+    implements MalformedPersistedData__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.MalformedPersistedData;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostProfileStoreError', 'MalformedPersistedData');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MalformedPersistedData_ {
+      return new MalformedPersistedData_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MalformedPersistedData_ {
+      return obj.tag === HostProfileStoreError_Tags.MalformedPersistedData;
+    }
+    static hasInner(obj: any): obj is MalformedPersistedData_ {
+      return MalformedPersistedData_.instanceOf(obj);
+    }
+
+    static getInner(obj: MalformedPersistedData_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type EmptyId__interface = {
+    tag: HostProfileStoreError_Tags.EmptyId;
+  };
+  class EmptyId_ extends UniffiError implements EmptyId__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.EmptyId;
+    constructor() {
+      super('HostProfileStoreError', 'EmptyId');
+    }
+
+    static new(): EmptyId_ {
+      return new EmptyId_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyId_ {
+      return obj.tag === HostProfileStoreError_Tags.EmptyId;
+    }
+    static hasInner(obj: any): obj is EmptyId_ {
+      return false;
+    }
+  }
+
+  type EmptyHost__interface = {
+    tag: HostProfileStoreError_Tags.EmptyHost;
+  };
+  class EmptyHost_ extends UniffiError implements EmptyHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.EmptyHost;
+    constructor() {
+      super('HostProfileStoreError', 'EmptyHost');
+    }
+
+    static new(): EmptyHost_ {
+      return new EmptyHost_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyHost_ {
+      return obj.tag === HostProfileStoreError_Tags.EmptyHost;
+    }
+    static hasInner(obj: any): obj is EmptyHost_ {
+      return false;
+    }
+  }
+
+  type EmptyUsername__interface = {
+    tag: HostProfileStoreError_Tags.EmptyUsername;
+  };
+  class EmptyUsername_ extends UniffiError implements EmptyUsername__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.EmptyUsername;
+    constructor() {
+      super('HostProfileStoreError', 'EmptyUsername');
+    }
+
+    static new(): EmptyUsername_ {
+      return new EmptyUsername_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyUsername_ {
+      return obj.tag === HostProfileStoreError_Tags.EmptyUsername;
+    }
+    static hasInner(obj: any): obj is EmptyUsername_ {
+      return false;
+    }
+  }
+
+  type InvalidPort__interface = {
+    tag: HostProfileStoreError_Tags.InvalidPort;
+    inner: Readonly<[string]>;
+  };
+  class InvalidPort_ extends UniffiError implements InvalidPort__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.InvalidPort;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostProfileStoreError', 'InvalidPort');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): InvalidPort_ {
+      return new InvalidPort_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidPort_ {
+      return obj.tag === HostProfileStoreError_Tags.InvalidPort;
+    }
+    static hasInner(obj: any): obj is InvalidPort_ {
+      return InvalidPort_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidPort_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type MissingHost__interface = {
+    tag: HostProfileStoreError_Tags.MissingHost;
+    inner: Readonly<[string]>;
+  };
+  class MissingHost_ extends UniffiError implements MissingHost__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.MissingHost;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostProfileStoreError', 'MissingHost');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MissingHost_ {
+      return new MissingHost_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MissingHost_ {
+      return obj.tag === HostProfileStoreError_Tags.MissingHost;
+    }
+    static hasInner(obj: any): obj is MissingHost_ {
+      return MissingHost_.instanceOf(obj);
+    }
+
+    static getInner(obj: MissingHost_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type MissingJumpHost__interface = {
+    tag: HostProfileStoreError_Tags.MissingJumpHost;
+    inner: Readonly<[string]>;
+  };
+  class MissingJumpHost_
+    extends UniffiError
+    implements MissingJumpHost__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.MissingJumpHost;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('HostProfileStoreError', 'MissingJumpHost');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MissingJumpHost_ {
+      return new MissingJumpHost_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MissingJumpHost_ {
+      return obj.tag === HostProfileStoreError_Tags.MissingJumpHost;
+    }
+    static hasInner(obj: any): obj is MissingJumpHost_ {
+      return MissingJumpHost_.instanceOf(obj);
+    }
+
+    static getInner(obj: MissingJumpHost_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type JumpHostCycle__interface = {
+    tag: HostProfileStoreError_Tags.JumpHostCycle;
+  };
+  class JumpHostCycle_ extends UniffiError implements JumpHostCycle__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.JumpHostCycle;
+    constructor() {
+      super('HostProfileStoreError', 'JumpHostCycle');
+    }
+
+    static new(): JumpHostCycle_ {
+      return new JumpHostCycle_();
+    }
+
+    static instanceOf(obj: any): obj is JumpHostCycle_ {
+      return obj.tag === HostProfileStoreError_Tags.JumpHostCycle;
+    }
+    static hasInner(obj: any): obj is JumpHostCycle_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is HostProfileStoreError {
+    return obj[uniffiTypeNameSymbol] === 'HostProfileStoreError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    MalformedPersistedData: MalformedPersistedData_,
+    EmptyId: EmptyId_,
+    EmptyHost: EmptyHost_,
+    EmptyUsername: EmptyUsername_,
+    InvalidPort: InvalidPort_,
+    MissingHost: MissingHost_,
+    MissingJumpHost: MissingJumpHost_,
+    JumpHostCycle: JumpHostCycle_,
+  });
+})();
+export type HostProfileStoreError = InstanceType<
+  (typeof HostProfileStoreError)[
+    | 'MalformedPersistedData'
+    | 'EmptyId'
+    | 'EmptyHost'
+    | 'EmptyUsername'
+    | 'InvalidPort'
+    | 'MissingHost'
+    | 'MissingJumpHost'
+    | 'JumpHostCycle']
+>;
+
+// FfiConverter for enum HostProfileStoreError
+const FfiConverterTypeHostProfileStoreError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostProfileStoreError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new HostProfileStoreError.MalformedPersistedData(
+            FfiConverterString.read(from),
+          );
+        case 2:
+          return new HostProfileStoreError.EmptyId();
+        case 3:
+          return new HostProfileStoreError.EmptyHost();
+        case 4:
+          return new HostProfileStoreError.EmptyUsername();
+        case 5:
+          return new HostProfileStoreError.InvalidPort(
+            FfiConverterString.read(from),
+          );
+        case 6:
+          return new HostProfileStoreError.MissingHost(
+            FfiConverterString.read(from),
+          );
+        case 7:
+          return new HostProfileStoreError.MissingJumpHost(
+            FfiConverterString.read(from),
+          );
+        case 8:
+          return new HostProfileStoreError.JumpHostCycle();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case HostProfileStoreError_Tags.MalformedPersistedData: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostProfileStoreError_Tags.EmptyId: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case HostProfileStoreError_Tags.EmptyHost: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case HostProfileStoreError_Tags.EmptyUsername: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case HostProfileStoreError_Tags.InvalidPort: {
+          ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostProfileStoreError_Tags.MissingHost: {
+          ordinalConverter.write(6, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostProfileStoreError_Tags.MissingJumpHost: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostProfileStoreError_Tags.JumpHostCycle: {
+          ordinalConverter.write(8, into);
+          return;
+        }
+        default:
+          // Throwing from here means that HostProfileStoreError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case HostProfileStoreError_Tags.MalformedPersistedData: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostProfileStoreError_Tags.EmptyId: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case HostProfileStoreError_Tags.EmptyHost: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case HostProfileStoreError_Tags.EmptyUsername: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case HostProfileStoreError_Tags.InvalidPort: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostProfileStoreError_Tags.MissingHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostProfileStoreError_Tags.MissingJumpHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case HostProfileStoreError_Tags.JumpHostCycle: {
+          return ordinalConverter.allocationSize(8);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum SshErrorCode {
   AuthenticationFailed,
   HostKeyUnknown,
@@ -15158,6 +16622,7 @@ export enum HostRuntimeEvent_Tags {
   SshShellData = 'SshShellData',
   SshShellClosed = 'SshShellClosed',
   HostStateChanged = 'HostStateChanged',
+  LatencyMeasured = 'LatencyMeasured',
   EventSubscriptionClosed = 'EventSubscriptionClosed',
   EventSubscriptionRestored = 'EventSubscriptionRestored',
   TransferProgressChanged = 'TransferProgressChanged',
@@ -15434,7 +16899,7 @@ export const HostRuntimeEvent = (() => {
     inner: Readonly<{
       runtimeId: string;
       state: HostStateSnapshot;
-      changedAgentPaneIds: Array<string>;
+      agentStatusTransitions: Array<AgentStatusTransition>;
     }>;
   };
   class HostStateChanged_
@@ -15450,12 +16915,12 @@ export const HostRuntimeEvent = (() => {
     readonly inner: Readonly<{
       runtimeId: string;
       state: HostStateSnapshot;
-      changedAgentPaneIds: Array<string>;
+      agentStatusTransitions: Array<AgentStatusTransition>;
     }>;
     constructor(inner: {
       runtimeId: string;
       state: HostStateSnapshot;
-      changedAgentPaneIds: Array<string>;
+      agentStatusTransitions: Array<AgentStatusTransition>;
     }) {
       super('HostRuntimeEvent', 'HostStateChanged');
 
@@ -15464,13 +16929,51 @@ export const HostRuntimeEvent = (() => {
     static new(inner: {
       runtimeId: string;
       state: HostStateSnapshot;
-      changedAgentPaneIds: Array<string>;
+      agentStatusTransitions: Array<AgentStatusTransition>;
     }): HostStateChanged_ {
       return new HostStateChanged_(inner);
     }
 
     static instanceOf(obj: any): obj is HostStateChanged_ {
       return obj.tag === HostRuntimeEvent_Tags.HostStateChanged;
+    }
+  }
+
+  type LatencyMeasured__interface = {
+    tag: HostRuntimeEvent_Tags.LatencyMeasured;
+    inner: Readonly<{ runtimeId: string; measurement: HostLatencyMeasurement }>;
+  };
+  class LatencyMeasured_
+    extends UniffiEnum
+    implements LatencyMeasured__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.LatencyMeasured;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      measurement: HostLatencyMeasurement;
+    }>;
+    constructor(inner: {
+      runtimeId: string;
+      measurement: HostLatencyMeasurement;
+    }) {
+      super('HostRuntimeEvent', 'LatencyMeasured');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      measurement: HostLatencyMeasurement;
+    }): LatencyMeasured_ {
+      return new LatencyMeasured_(inner);
+    }
+
+    static instanceOf(obj: any): obj is LatencyMeasured_ {
+      return obj.tag === HostRuntimeEvent_Tags.LatencyMeasured;
     }
   }
 
@@ -15690,6 +17193,7 @@ export const HostRuntimeEvent = (() => {
     SshShellData: SshShellData_,
     SshShellClosed: SshShellClosed_,
     HostStateChanged: HostStateChanged_,
+    LatencyMeasured: LatencyMeasured_,
     EventSubscriptionClosed: EventSubscriptionClosed_,
     EventSubscriptionRestored: EventSubscriptionRestored_,
     TransferProgressChanged: TransferProgressChanged_,
@@ -15707,6 +17211,7 @@ export type HostRuntimeEvent = InstanceType<
     | 'SshShellData'
     | 'SshShellClosed'
     | 'HostStateChanged'
+    | 'LatencyMeasured'
     | 'EventSubscriptionClosed'
     | 'EventSubscriptionRestored'
     | 'TransferProgressChanged'
@@ -15765,36 +17270,42 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return new HostRuntimeEvent.HostStateChanged({
             runtimeId: FfiConverterString.read(from),
             state: FfiConverterTypeHostStateSnapshot.read(from),
-            changedAgentPaneIds: FfiConverterSequenceString.read(from),
+            agentStatusTransitions:
+              FfiConverterSequenceTypeAgentStatusTransition.read(from),
           });
         case 8:
+          return new HostRuntimeEvent.LatencyMeasured({
+            runtimeId: FfiConverterString.read(from),
+            measurement: FfiConverterTypeHostLatencyMeasurement.read(from),
+          });
+        case 9:
           return new HostRuntimeEvent.EventSubscriptionClosed({
             runtimeId: FfiConverterString.read(from),
             reason: FfiConverterString.read(from),
           });
-        case 9:
+        case 10:
           return new HostRuntimeEvent.EventSubscriptionRestored({
             runtimeId: FfiConverterString.read(from),
             generation: FfiConverterUInt64.read(from),
           });
-        case 10:
+        case 11:
           return new HostRuntimeEvent.TransferProgressChanged({
             runtimeId: FfiConverterString.read(from),
             progress: FfiConverterTypeTransferProgress.read(from),
           });
-        case 11:
+        case 12:
           return new HostRuntimeEvent.PreviewStateChanged({
             runtimeId: FfiConverterString.read(from),
             previewId: FfiConverterString.read(from),
             state: FfiConverterTypePreviewState.read(from),
             error: FfiConverterOptionalString.read(from),
           });
-        case 12:
+        case 13:
           return new HostRuntimeEvent.Diagnostic({
             runtimeId: FfiConverterString.read(from),
             diagnostic: FfiConverterTypeRuntimeDiagnostic.read(from),
           });
-        case 13:
+        case 14:
           return new HostRuntimeEvent.FatalError({
             runtimeId: FfiConverterString.read(from),
             message: FfiConverterString.read(from),
@@ -15861,32 +17372,42 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeHostStateSnapshot.write(inner.state, into);
-          FfiConverterSequenceString.write(inner.changedAgentPaneIds, into);
+          FfiConverterSequenceTypeAgentStatusTransition.write(
+            inner.agentStatusTransitions,
+            into,
+          );
+          return;
+        }
+        case HostRuntimeEvent_Tags.LatencyMeasured: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterTypeHostLatencyMeasurement.write(inner.measurement, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
-          ordinalConverter.write(8, into);
+          ordinalConverter.write(9, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.reason, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
-          ordinalConverter.write(9, into);
+          ordinalConverter.write(10, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterUInt64.write(inner.generation, into);
           return;
         }
         case HostRuntimeEvent_Tags.TransferProgressChanged: {
-          ordinalConverter.write(10, into);
+          ordinalConverter.write(11, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeTransferProgress.write(inner.progress, into);
           return;
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
-          ordinalConverter.write(11, into);
+          ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.previewId, into);
@@ -15895,14 +17416,14 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
-          ordinalConverter.write(12, into);
+          ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeRuntimeDiagnostic.write(inner.diagnostic, into);
           return;
         }
         case HostRuntimeEvent_Tags.FatalError: {
-          ordinalConverter.write(13, into);
+          ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.message, into);
@@ -15973,28 +17494,37 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeHostStateSnapshot.allocationSize(inner.state);
-          size += FfiConverterSequenceString.allocationSize(
-            inner.changedAgentPaneIds,
+          size += FfiConverterSequenceTypeAgentStatusTransition.allocationSize(
+            inner.agentStatusTransitions,
+          );
+          return size;
+        }
+        case HostRuntimeEvent_Tags.LatencyMeasured: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterTypeHostLatencyMeasurement.allocationSize(
+            inner.measurement,
           );
           return size;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(8);
+          let size = ordinalConverter.allocationSize(9);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.reason);
           return size;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(9);
+          let size = ordinalConverter.allocationSize(10);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterUInt64.allocationSize(inner.generation);
           return size;
         }
         case HostRuntimeEvent_Tags.TransferProgressChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(10);
+          let size = ordinalConverter.allocationSize(11);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeTransferProgress.allocationSize(
             inner.progress,
@@ -16003,7 +17533,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(11);
+          let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.previewId);
           size += FfiConverterTypePreviewState.allocationSize(inner.state);
@@ -16012,7 +17542,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(12);
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeRuntimeDiagnostic.allocationSize(
             inner.diagnostic,
@@ -16021,7 +17551,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.FatalError: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(13);
+          let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -16079,6 +17609,12 @@ export enum KnownHostStoreError_Tags {
   InvalidPort = 'InvalidPort',
   MalformedKey = 'MalformedKey',
   KeyTypeMismatch = 'KeyTypeMismatch',
+  EmptyId = 'EmptyId',
+  EmptyFingerprint = 'EmptyFingerprint',
+  EmptyCreatedAt = 'EmptyCreatedAt',
+  MalformedPersistedData = 'MalformedPersistedData',
+  InvalidMutation = 'InvalidMutation',
+  MutationInProgress = 'MutationInProgress',
 }
 export const KnownHostStoreError = (() => {
   type EmptyHost__interface = {
@@ -16209,6 +17745,198 @@ export const KnownHostStoreError = (() => {
     }
   }
 
+  type EmptyId__interface = {
+    tag: KnownHostStoreError_Tags.EmptyId;
+  };
+  class EmptyId_ extends UniffiError implements EmptyId__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.EmptyId;
+    constructor() {
+      super('KnownHostStoreError', 'EmptyId');
+    }
+
+    static new(): EmptyId_ {
+      return new EmptyId_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyId_ {
+      return obj.tag === KnownHostStoreError_Tags.EmptyId;
+    }
+    static hasInner(obj: any): obj is EmptyId_ {
+      return false;
+    }
+  }
+
+  type EmptyFingerprint__interface = {
+    tag: KnownHostStoreError_Tags.EmptyFingerprint;
+  };
+  class EmptyFingerprint_
+    extends UniffiError
+    implements EmptyFingerprint__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.EmptyFingerprint;
+    constructor() {
+      super('KnownHostStoreError', 'EmptyFingerprint');
+    }
+
+    static new(): EmptyFingerprint_ {
+      return new EmptyFingerprint_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyFingerprint_ {
+      return obj.tag === KnownHostStoreError_Tags.EmptyFingerprint;
+    }
+    static hasInner(obj: any): obj is EmptyFingerprint_ {
+      return false;
+    }
+  }
+
+  type EmptyCreatedAt__interface = {
+    tag: KnownHostStoreError_Tags.EmptyCreatedAt;
+  };
+  class EmptyCreatedAt_
+    extends UniffiError
+    implements EmptyCreatedAt__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.EmptyCreatedAt;
+    constructor() {
+      super('KnownHostStoreError', 'EmptyCreatedAt');
+    }
+
+    static new(): EmptyCreatedAt_ {
+      return new EmptyCreatedAt_();
+    }
+
+    static instanceOf(obj: any): obj is EmptyCreatedAt_ {
+      return obj.tag === KnownHostStoreError_Tags.EmptyCreatedAt;
+    }
+    static hasInner(obj: any): obj is EmptyCreatedAt_ {
+      return false;
+    }
+  }
+
+  type MalformedPersistedData__interface = {
+    tag: KnownHostStoreError_Tags.MalformedPersistedData;
+    inner: Readonly<[string]>;
+  };
+  class MalformedPersistedData_
+    extends UniffiError
+    implements MalformedPersistedData__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.MalformedPersistedData;
+    readonly inner: Readonly<[string]>;
+    constructor(v0: string) {
+      super('KnownHostStoreError', 'MalformedPersistedData');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: string): MalformedPersistedData_ {
+      return new MalformedPersistedData_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MalformedPersistedData_ {
+      return obj.tag === KnownHostStoreError_Tags.MalformedPersistedData;
+    }
+    static hasInner(obj: any): obj is MalformedPersistedData_ {
+      return MalformedPersistedData_.instanceOf(obj);
+    }
+
+    static getInner(obj: MalformedPersistedData_): Readonly<[string]> {
+      return obj.inner;
+    }
+  }
+
+  type InvalidMutation__interface = {
+    tag: KnownHostStoreError_Tags.InvalidMutation;
+    inner: Readonly<[bigint]>;
+  };
+  class InvalidMutation_
+    extends UniffiError
+    implements InvalidMutation__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.InvalidMutation;
+    readonly inner: Readonly<[bigint]>;
+    constructor(v0: bigint) {
+      super('KnownHostStoreError', 'InvalidMutation');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: bigint): InvalidMutation_ {
+      return new InvalidMutation_(v0);
+    }
+
+    static instanceOf(obj: any): obj is InvalidMutation_ {
+      return obj.tag === KnownHostStoreError_Tags.InvalidMutation;
+    }
+    static hasInner(obj: any): obj is InvalidMutation_ {
+      return InvalidMutation_.instanceOf(obj);
+    }
+
+    static getInner(obj: InvalidMutation_): Readonly<[bigint]> {
+      return obj.inner;
+    }
+  }
+
+  type MutationInProgress__interface = {
+    tag: KnownHostStoreError_Tags.MutationInProgress;
+    inner: Readonly<[bigint]>;
+  };
+  class MutationInProgress_
+    extends UniffiError
+    implements MutationInProgress__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostStoreError';
+    readonly tag = KnownHostStoreError_Tags.MutationInProgress;
+    readonly inner: Readonly<[bigint]>;
+    constructor(v0: bigint) {
+      super('KnownHostStoreError', 'MutationInProgress');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: bigint): MutationInProgress_ {
+      return new MutationInProgress_(v0);
+    }
+
+    static instanceOf(obj: any): obj is MutationInProgress_ {
+      return obj.tag === KnownHostStoreError_Tags.MutationInProgress;
+    }
+    static hasInner(obj: any): obj is MutationInProgress_ {
+      return MutationInProgress_.instanceOf(obj);
+    }
+
+    static getInner(obj: MutationInProgress_): Readonly<[bigint]> {
+      return obj.inner;
+    }
+  }
+
   function instanceOf(obj: any): obj is KnownHostStoreError {
     return obj[uniffiTypeNameSymbol] === 'KnownHostStoreError';
   }
@@ -16219,6 +17947,12 @@ export const KnownHostStoreError = (() => {
     InvalidPort: InvalidPort_,
     MalformedKey: MalformedKey_,
     KeyTypeMismatch: KeyTypeMismatch_,
+    EmptyId: EmptyId_,
+    EmptyFingerprint: EmptyFingerprint_,
+    EmptyCreatedAt: EmptyCreatedAt_,
+    MalformedPersistedData: MalformedPersistedData_,
+    InvalidMutation: InvalidMutation_,
+    MutationInProgress: MutationInProgress_,
   });
 })();
 export type KnownHostStoreError = InstanceType<
@@ -16226,7 +17960,13 @@ export type KnownHostStoreError = InstanceType<
     | 'EmptyHost'
     | 'InvalidPort'
     | 'MalformedKey'
-    | 'KeyTypeMismatch']
+    | 'KeyTypeMismatch'
+    | 'EmptyId'
+    | 'EmptyFingerprint'
+    | 'EmptyCreatedAt'
+    | 'MalformedPersistedData'
+    | 'InvalidMutation'
+    | 'MutationInProgress']
 >;
 
 // FfiConverter for enum KnownHostStoreError
@@ -16250,6 +17990,24 @@ const FfiConverterTypeKnownHostStoreError = (() => {
           return new KnownHostStoreError.KeyTypeMismatch(
             FfiConverterString.read(from),
             FfiConverterString.read(from),
+          );
+        case 5:
+          return new KnownHostStoreError.EmptyId();
+        case 6:
+          return new KnownHostStoreError.EmptyFingerprint();
+        case 7:
+          return new KnownHostStoreError.EmptyCreatedAt();
+        case 8:
+          return new KnownHostStoreError.MalformedPersistedData(
+            FfiConverterString.read(from),
+          );
+        case 9:
+          return new KnownHostStoreError.InvalidMutation(
+            FfiConverterUInt64.read(from),
+          );
+        case 10:
+          return new KnownHostStoreError.MutationInProgress(
+            FfiConverterUInt64.read(from),
           );
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -16280,6 +18038,36 @@ const FfiConverterTypeKnownHostStoreError = (() => {
           FfiConverterString.write(inner[1], into);
           return;
         }
+        case KnownHostStoreError_Tags.EmptyId: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        case KnownHostStoreError_Tags.EmptyFingerprint: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        case KnownHostStoreError_Tags.EmptyCreatedAt: {
+          ordinalConverter.write(7, into);
+          return;
+        }
+        case KnownHostStoreError_Tags.MalformedPersistedData: {
+          ordinalConverter.write(8, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case KnownHostStoreError_Tags.InvalidMutation: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterUInt64.write(inner[0], into);
+          return;
+        }
+        case KnownHostStoreError_Tags.MutationInProgress: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterUInt64.write(inner[0], into);
+          return;
+        }
         default:
           // Throwing from here means that KnownHostStoreError_Tags hasn't matched an ordinal.
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -16307,6 +18095,33 @@ const FfiConverterTypeKnownHostStoreError = (() => {
           let size = ordinalConverter.allocationSize(4);
           size += FfiConverterString.allocationSize(inner[0]);
           size += FfiConverterString.allocationSize(inner[1]);
+          return size;
+        }
+        case KnownHostStoreError_Tags.EmptyId: {
+          return ordinalConverter.allocationSize(5);
+        }
+        case KnownHostStoreError_Tags.EmptyFingerprint: {
+          return ordinalConverter.allocationSize(6);
+        }
+        case KnownHostStoreError_Tags.EmptyCreatedAt: {
+          return ordinalConverter.allocationSize(7);
+        }
+        case KnownHostStoreError_Tags.MalformedPersistedData: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(8);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
+        case KnownHostStoreError_Tags.InvalidMutation: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterUInt64.allocationSize(inner[0]);
+          return size;
+        }
+        case KnownHostStoreError_Tags.MutationInProgress: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterUInt64.allocationSize(inner[0]);
           return size;
         }
         default:
@@ -18012,528 +19827,6 @@ const uniffiCallbackInterfaceAgentTranscriptEventSink: {
   },
 };
 
-export interface HerdrEventSink {
-  event(clientKey: string, event: HerdrEvent): void;
-  closed(clientKey: string, reason: string): void;
-}
-
-export class HerdrEventSinkImpl
-  extends UniffiAbstractObject
-  implements HerdrEventSink
-{
-  readonly [uniffiTypeNameSymbol] = 'HerdrEventSinkImpl';
-  readonly [destructorGuardSymbol]: UniffiGcObject;
-  readonly [pointerLiteralSymbol]: UniffiHandle;
-  // No primary constructor declared for this class.
-  private constructor(pointer: UniffiHandle) {
-    super();
-    this[pointerLiteralSymbol] = pointer;
-    this[destructorGuardSymbol] =
-      uniffiTypeHerdrEventSinkImplObjectFactory.bless(pointer);
-  }
-
-  event(clientKey: string, event: HerdrEvent): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
-          uniffiTypeHerdrEventSinkImplObjectFactory.clonePointer(this),
-          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
-          FfiConverterTypeHerdrEvent.lower(
-            event,
-            nativeModule().rustbuffer_alloc,
-          ),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  closed(clientKey: string, reason: string): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdreventsink_closed(
-          uniffiTypeHerdrEventSinkImplObjectFactory.clonePointer(this),
-          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(reason, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  uniffiDestroy(): void {
-    const ptr = (this as any)[destructorGuardSymbol];
-    if (ptr !== undefined) {
-      const pointer = uniffiTypeHerdrEventSinkImplObjectFactory.pointer(this);
-      uniffiTypeHerdrEventSinkImplObjectFactory.freePointer(pointer);
-      uniffiTypeHerdrEventSinkImplObjectFactory.unbless(ptr);
-      delete (this as any)[destructorGuardSymbol];
-    }
-  }
-
-  static instanceOf(obj_: any): obj_ is HerdrEventSinkImpl {
-    return uniffiTypeHerdrEventSinkImplObjectFactory.isConcreteType(obj_);
-  }
-}
-
-const uniffiTypeHerdrEventSinkImplObjectFactory: UniffiObjectFactory<HerdrEventSink> =
-  (() => {
-    return {
-      create(pointer: UniffiHandle): HerdrEventSink {
-        const instance = Object.create(HerdrEventSinkImpl.prototype);
-        instance[pointerLiteralSymbol] = pointer;
-        instance[destructorGuardSymbol] = this.bless(pointer);
-        instance[uniffiTypeNameSymbol] = 'HerdrEventSinkImpl';
-        return instance;
-      },
-
-      bless(p: UniffiHandle): UniffiGcObject {
-        return uniffiCaller.rustCall(
-          /*caller:*/ status =>
-            nativeModule().ubrn_uniffi_internal_fn_method_herdreventsink_ffi__bless_pointer(
-              p,
-              status,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      unbless(ptr_: UniffiGcObject) {
-        ptr_.markDestroyed();
-      },
-
-      pointer(obj_: HerdrEventSink): UniffiHandle {
-        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
-          throw new UniffiInternalError.UnexpectedNullPointer();
-        }
-        return (obj_ as any)[pointerLiteralSymbol];
-      },
-
-      clonePointer(obj_: HerdrEventSink): UniffiHandle {
-        const pointer = this.pointer(obj_);
-        return uniffiCaller.rustCall(
-          /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
-              pointer,
-              callStatus,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      freePointer(pointer: UniffiHandle): void {
-        uniffiCaller.rustCall(
-          /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdreventsink(
-              pointer,
-              callStatus,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      isConcreteType(obj_: any): obj_ is HerdrEventSink {
-        return (
-          obj_[destructorGuardSymbol] &&
-          obj_[uniffiTypeNameSymbol] === 'HerdrEventSinkImpl'
-        );
-      },
-    };
-  })();
-const FfiConverterTypeHerdrEventSink = new FfiConverterObjectWithCallbacks(
-  uniffiTypeHerdrEventSinkImplObjectFactory,
-);
-
-// Add a vtable for the callbacks that go in HerdrEventSink.
-
-// Put the implementation in a struct so we don't pollute the top-level namespace
-const uniffiCallbackInterfaceHerdrEventSink: {
-  vtable: any;
-  register: () => void;
-} = {
-  // Create the VTable using a series of closures.
-  // ts automatically converts these into C callback functions.
-  vtable: {
-    event: (uniffiHandle: bigint, clientKey: Uint8Array, event: Uint8Array) => {
-      const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
-        return jsCallback.event(
-          FfiConverterString.lift(clientKey),
-          FfiConverterTypeHerdrEvent.lift(event),
-        );
-      };
-      const uniffiResult = UniffiResult.ready<void>();
-      const uniffiHandleSuccess = (obj: any) => {};
-      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
-        UniffiResult.writeError(uniffiResult, code, errBuf);
-      };
-      uniffiTraitInterfaceCall(
-        /*makeCall:*/ uniffiMakeCall,
-        /*handleSuccess:*/ uniffiHandleSuccess,
-        /*handleError:*/ uniffiHandleError,
-        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
-        /*alloc:*/ nativeModule().rustbuffer_alloc,
-      );
-      return uniffiResult;
-    },
-    closed: (
-      uniffiHandle: bigint,
-      clientKey: Uint8Array,
-      reason: Uint8Array,
-    ) => {
-      const uniffiMakeCall = (): void => {
-        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
-        return jsCallback.closed(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(reason),
-        );
-      };
-      const uniffiResult = UniffiResult.ready<void>();
-      const uniffiHandleSuccess = (obj: any) => {};
-      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
-        UniffiResult.writeError(uniffiResult, code, errBuf);
-      };
-      uniffiTraitInterfaceCall(
-        /*makeCall:*/ uniffiMakeCall,
-        /*handleSuccess:*/ uniffiHandleSuccess,
-        /*handleError:*/ uniffiHandleError,
-        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
-        /*alloc:*/ nativeModule().rustbuffer_alloc,
-      );
-      return uniffiResult;
-    },
-    uniffi_free: (uniffiHandle: UniffiHandle): void => {
-      // this will throw a stale handle error if the handle isn't found.
-      FfiConverterTypeHerdrEventSink.drop(uniffiHandle);
-    },
-    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
-      return FfiConverterTypeHerdrEventSink.clone(uniffiHandle);
-    },
-  },
-  register: () => {
-    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdreventsink(
-      uniffiCallbackInterfaceHerdrEventSink.vtable,
-    );
-  },
-};
-
-export interface HerdrTerminalEventSink {
-  terminalFrame(
-    clientKey: string,
-    terminalId: string,
-    sequence: bigint,
-    width: number,
-    height: number,
-    full: boolean,
-    base64Bytes: string,
-  ): void;
-  graphicsFrame(
-    clientKey: string,
-    terminalId: string,
-    bytes: ArrayBuffer,
-  ): void;
-  control(
-    clientKey: string,
-    terminalId: string,
-    event: HerdrTerminalControlEvent,
-  ): void;
-}
-
-export class HerdrTerminalEventSinkImpl
-  extends UniffiAbstractObject
-  implements HerdrTerminalEventSink
-{
-  readonly [uniffiTypeNameSymbol] = 'HerdrTerminalEventSinkImpl';
-  readonly [destructorGuardSymbol]: UniffiGcObject;
-  readonly [pointerLiteralSymbol]: UniffiHandle;
-  // No primary constructor declared for this class.
-  private constructor(pointer: UniffiHandle) {
-    super();
-    this[pointerLiteralSymbol] = pointer;
-    this[destructorGuardSymbol] =
-      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.bless(pointer);
-  }
-
-  terminalFrame(
-    clientKey: string,
-    terminalId: string,
-    sequence: bigint,
-    width: number,
-    height: number,
-    full: boolean,
-    base64Bytes: string,
-  ): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_terminal_frame(
-          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
-          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt64.lower(sequence, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt16.lower(width, nativeModule().rustbuffer_alloc),
-          FfiConverterUInt16.lower(height, nativeModule().rustbuffer_alloc),
-          FfiConverterBool.lower(full, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(
-            base64Bytes,
-            nativeModule().rustbuffer_alloc,
-          ),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  graphicsFrame(
-    clientKey: string,
-    terminalId: string,
-    bytes: ArrayBuffer,
-  ): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_graphics_frame(
-          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
-          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  control(
-    clientKey: string,
-    terminalId: string,
-    event: HerdrTerminalControlEvent,
-  ): void {
-    uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_control(
-          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
-          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
-          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
-          FfiConverterTypeHerdrTerminalControlEvent.lower(
-            event,
-            nativeModule().rustbuffer_alloc,
-          ),
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
-  }
-
-  uniffiDestroy(): void {
-    const ptr = (this as any)[destructorGuardSymbol];
-    if (ptr !== undefined) {
-      const pointer =
-        uniffiTypeHerdrTerminalEventSinkImplObjectFactory.pointer(this);
-      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.freePointer(pointer);
-      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.unbless(ptr);
-      delete (this as any)[destructorGuardSymbol];
-    }
-  }
-
-  static instanceOf(obj_: any): obj_ is HerdrTerminalEventSinkImpl {
-    return uniffiTypeHerdrTerminalEventSinkImplObjectFactory.isConcreteType(
-      obj_,
-    );
-  }
-}
-
-const uniffiTypeHerdrTerminalEventSinkImplObjectFactory: UniffiObjectFactory<HerdrTerminalEventSink> =
-  (() => {
-    return {
-      create(pointer: UniffiHandle): HerdrTerminalEventSink {
-        const instance = Object.create(HerdrTerminalEventSinkImpl.prototype);
-        instance[pointerLiteralSymbol] = pointer;
-        instance[destructorGuardSymbol] = this.bless(pointer);
-        instance[uniffiTypeNameSymbol] = 'HerdrTerminalEventSinkImpl';
-        return instance;
-      },
-
-      bless(p: UniffiHandle): UniffiGcObject {
-        return uniffiCaller.rustCall(
-          /*caller:*/ status =>
-            nativeModule().ubrn_uniffi_internal_fn_method_herdrterminaleventsink_ffi__bless_pointer(
-              p,
-              status,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      unbless(ptr_: UniffiGcObject) {
-        ptr_.markDestroyed();
-      },
-
-      pointer(obj_: HerdrTerminalEventSink): UniffiHandle {
-        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
-          throw new UniffiInternalError.UnexpectedNullPointer();
-        }
-        return (obj_ as any)[pointerLiteralSymbol];
-      },
-
-      clonePointer(obj_: HerdrTerminalEventSink): UniffiHandle {
-        const pointer = this.pointer(obj_);
-        return uniffiCaller.rustCall(
-          /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdrterminaleventsink(
-              pointer,
-              callStatus,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      freePointer(pointer: UniffiHandle): void {
-        uniffiCaller.rustCall(
-          /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdrterminaleventsink(
-              pointer,
-              callStatus,
-            ),
-          /*liftString:*/ FfiConverterString.lift,
-        );
-      },
-
-      isConcreteType(obj_: any): obj_ is HerdrTerminalEventSink {
-        return (
-          obj_[destructorGuardSymbol] &&
-          obj_[uniffiTypeNameSymbol] === 'HerdrTerminalEventSinkImpl'
-        );
-      },
-    };
-  })();
-const FfiConverterTypeHerdrTerminalEventSink =
-  new FfiConverterObjectWithCallbacks(
-    uniffiTypeHerdrTerminalEventSinkImplObjectFactory,
-  );
-
-// Add a vtable for the callbacks that go in HerdrTerminalEventSink.
-
-// Put the implementation in a struct so we don't pollute the top-level namespace
-const uniffiCallbackInterfaceHerdrTerminalEventSink: {
-  vtable: any;
-  register: () => void;
-} = {
-  // Create the VTable using a series of closures.
-  // ts automatically converts these into C callback functions.
-  vtable: {
-    terminal_frame: (
-      uniffiHandle: bigint,
-      clientKey: Uint8Array,
-      terminalId: Uint8Array,
-      sequence: bigint,
-      width: number,
-      height: number,
-      full: number,
-      base64Bytes: Uint8Array,
-    ) => {
-      const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
-        return jsCallback.terminalFrame(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(terminalId),
-          FfiConverterUInt64.lift(sequence),
-          FfiConverterUInt16.lift(width),
-          FfiConverterUInt16.lift(height),
-          FfiConverterBool.lift(full),
-          FfiConverterString.lift(base64Bytes),
-        );
-      };
-      const uniffiResult = UniffiResult.ready<void>();
-      const uniffiHandleSuccess = (obj: any) => {};
-      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
-        UniffiResult.writeError(uniffiResult, code, errBuf);
-      };
-      uniffiTraitInterfaceCall(
-        /*makeCall:*/ uniffiMakeCall,
-        /*handleSuccess:*/ uniffiHandleSuccess,
-        /*handleError:*/ uniffiHandleError,
-        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
-        /*alloc:*/ nativeModule().rustbuffer_alloc,
-      );
-      return uniffiResult;
-    },
-    graphics_frame: (
-      uniffiHandle: bigint,
-      clientKey: Uint8Array,
-      terminalId: Uint8Array,
-      bytes: Uint8Array,
-    ) => {
-      const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
-        return jsCallback.graphicsFrame(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(terminalId),
-          FfiConverterArrayBuffer.lift(bytes),
-        );
-      };
-      const uniffiResult = UniffiResult.ready<void>();
-      const uniffiHandleSuccess = (obj: any) => {};
-      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
-        UniffiResult.writeError(uniffiResult, code, errBuf);
-      };
-      uniffiTraitInterfaceCall(
-        /*makeCall:*/ uniffiMakeCall,
-        /*handleSuccess:*/ uniffiHandleSuccess,
-        /*handleError:*/ uniffiHandleError,
-        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
-        /*alloc:*/ nativeModule().rustbuffer_alloc,
-      );
-      return uniffiResult;
-    },
-    control: (
-      uniffiHandle: bigint,
-      clientKey: Uint8Array,
-      terminalId: Uint8Array,
-      event: Uint8Array,
-    ) => {
-      const uniffiMakeCall = (): void => {
-        const jsCallback =
-          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
-        return jsCallback.control(
-          FfiConverterString.lift(clientKey),
-          FfiConverterString.lift(terminalId),
-          FfiConverterTypeHerdrTerminalControlEvent.lift(event),
-        );
-      };
-      const uniffiResult = UniffiResult.ready<void>();
-      const uniffiHandleSuccess = (obj: any) => {};
-      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
-        UniffiResult.writeError(uniffiResult, code, errBuf);
-      };
-      uniffiTraitInterfaceCall(
-        /*makeCall:*/ uniffiMakeCall,
-        /*handleSuccess:*/ uniffiHandleSuccess,
-        /*handleError:*/ uniffiHandleError,
-        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
-        /*alloc:*/ nativeModule().rustbuffer_alloc,
-      );
-      return uniffiResult;
-    },
-    uniffi_free: (uniffiHandle: UniffiHandle): void => {
-      // this will throw a stale handle error if the handle isn't found.
-      FfiConverterTypeHerdrTerminalEventSink.drop(uniffiHandle);
-    },
-    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
-      return FfiConverterTypeHerdrTerminalEventSink.clone(uniffiHandle);
-    },
-  },
-  register: () => {
-    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdrterminaleventsink(
-      uniffiCallbackInterfaceHerdrTerminalEventSink.vtable,
-    );
-  },
-};
-
 export interface HostRuntimeLike {
   agentIntegrationStatus(
     kind: HerdrAgentKind,
@@ -18680,6 +19973,11 @@ export interface HostRuntimeLike {
     row: number | undefined,
     modifiers: number,
   ): /*throws*/ void;
+  setMonitoringState(
+    appActive: boolean,
+    hostsVisible: boolean,
+    accessLocked: boolean,
+  ): void;
   sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined;
   sshShellInput(terminalId: string, bytes: ArrayBuffer): /*throws*/ void;
   startAgentSession(
@@ -20211,6 +21509,25 @@ export class HostRuntime
     );
   }
 
+  setMonitoringState(
+    appActive: boolean,
+    hostsVisible: boolean,
+    accessLocked: boolean,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_monitoring_state(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterBool.lower(appActive, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(hostsVisible, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(accessLocked, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined {
     return ((__rb: Uint8Array) => {
       try {
@@ -20909,6 +22226,1512 @@ const FfiConverterTypeHostRuntime = new FfiConverterObject(
   uniffiTypeHostRuntimeObjectFactory,
 );
 
+/**
+ * Application/session state. Herdr truth remains owned by each referenced `HostRuntime`.
+ */
+export interface AppCoreLike {
+  attachRuntime(sessionId: string, runtime: HostRuntimeLike): AppCoreView;
+  closeSession(sessionId: string): AppCoreView;
+  closeTerminal(sessionId: string, terminalId: string): AppCoreView;
+  detachRuntime(sessionId: string): AppCoreView;
+  herdView(
+    metadata: Array<HerdSessionMetadata>,
+    requestedHostId: string | undefined,
+    requestedWorkspaceId: string | undefined,
+  ): HerdView;
+  openPaneTerminal(sessionId: string, paneId: string): AppCoreView;
+  openSession(
+    sessionId: string,
+    hostId: string,
+    activate: boolean,
+  ): AppCoreView;
+  openSshShell(sessionId: string, title: string): AppCoreView;
+  restoreTerminals(
+    sessionId: string,
+    terminalIds: Array<string>,
+    activeTerminalId: string | undefined,
+  ): AppCoreView;
+  selectHost(hostId: string): AppCoreView;
+  selectSession(sessionId: string): AppCoreView;
+  selectWorkspaceView(sessionId: string, workspaceId: string): AppCoreView;
+  setPlaceholderConnection(
+    sessionId: string,
+    status: AppConnectionStatus,
+    error: string | undefined,
+    reconnectAttempt: number | undefined,
+  ): AppCoreView;
+  updateTerminalLifecycle(
+    sessionId: string,
+    terminalId: string,
+    terminalState: HostTerminalState,
+    retrying: boolean,
+    error: string | undefined,
+    reconnectAttempt: number,
+  ): AppCoreView;
+  view(): AppCoreView;
+}
+/**
+ * @deprecated Use `AppCoreLike` instead.
+ */
+export type AppCoreInterface = AppCoreLike;
+
+/**
+ * Application/session state. Herdr truth remains owned by each referenced `HostRuntime`.
+ */
+export class AppCore extends UniffiAbstractObject implements AppCoreLike {
+  readonly [uniffiTypeNameSymbol] = 'AppCore';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_appcore_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] = uniffiTypeAppCoreObjectFactory.bless(pointer);
+  }
+
+  attachRuntime(sessionId: string, runtime: HostRuntimeLike): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_attach_runtime(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostRuntime.lower(
+              runtime,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  closeSession(sessionId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_close_session(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  closeTerminal(sessionId: string, terminalId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_close_terminal(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  detachRuntime(sessionId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_detach_runtime(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  herdView(
+    metadata: Array<HerdSessionMetadata>,
+    requestedHostId: string | undefined,
+    requestedWorkspaceId: string | undefined,
+  ): HerdView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHerdView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_herd_view(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterSequenceTypeHerdSessionMetadata.lower(
+              metadata,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              requestedHostId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              requestedWorkspaceId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  openPaneTerminal(sessionId: string, paneId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_open_pane_terminal(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(paneId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  openSession(
+    sessionId: string,
+    hostId: string,
+    activate: boolean,
+  ): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_open_session(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(activate, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  openSshShell(sessionId: string, title: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_open_ssh_shell(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(title, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  restoreTerminals(
+    sessionId: string,
+    terminalIds: Array<string>,
+    activeTerminalId: string | undefined,
+  ): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_restore_terminals(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterSequenceString.lower(
+              terminalIds,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              activeTerminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  selectHost(hostId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_select_host(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  selectSession(sessionId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_select_session(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  selectWorkspaceView(sessionId: string, workspaceId: string): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_select_workspace_view(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              workspaceId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setPlaceholderConnection(
+    sessionId: string,
+    status: AppConnectionStatus,
+    error: string | undefined,
+    reconnectAttempt: number | undefined,
+  ): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_set_placeholder_connection(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeAppConnectionStatus.lower(
+              status,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              error,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalUInt32.lower(
+              reconnectAttempt,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  updateTerminalLifecycle(
+    sessionId: string,
+    terminalId: string,
+    terminalState: HostTerminalState,
+    retrying: boolean,
+    error: string | undefined,
+    reconnectAttempt: number,
+  ): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_update_terminal_lifecycle(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              sessionId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostTerminalState.lower(
+              terminalState,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(retrying, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalString.lower(
+              error,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt32.lower(
+              reconnectAttempt,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  view(): AppCoreView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeAppCoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_appcore_view(
+            uniffiTypeAppCoreObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeAppCoreObjectFactory.pointer(this);
+      uniffiTypeAppCoreObjectFactory.freePointer(pointer);
+      uniffiTypeAppCoreObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is AppCore {
+    return uniffiTypeAppCoreObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeAppCoreObjectFactory: UniffiObjectFactory<AppCoreLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): AppCoreLike {
+        const instance = Object.create(AppCore.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'AppCore';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_appcore_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: AppCoreLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: AppCoreLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_appcore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_appcore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is AppCoreLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'AppCore'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeAppCore = new FfiConverterObject(
+  uniffiTypeAppCoreObjectFactory,
+);
+
+export interface HerdrEventSink {
+  event(clientKey: string, event: HerdrEvent): void;
+  closed(clientKey: string, reason: string): void;
+}
+
+export class HerdrEventSinkImpl
+  extends UniffiAbstractObject
+  implements HerdrEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'HerdrEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHerdrEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  event(clientKey: string, event: HerdrEvent): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
+          uniffiTypeHerdrEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeHerdrEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  closed(clientKey: string, reason: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdreventsink_closed(
+          uniffiTypeHerdrEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(reason, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHerdrEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeHerdrEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeHerdrEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HerdrEventSinkImpl {
+    return uniffiTypeHerdrEventSinkImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHerdrEventSinkImplObjectFactory: UniffiObjectFactory<HerdrEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HerdrEventSink {
+        const instance = Object.create(HerdrEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HerdrEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_herdreventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HerdrEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HerdrEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdreventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HerdrEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HerdrEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHerdrEventSink = new FfiConverterObjectWithCallbacks(
+  uniffiTypeHerdrEventSinkImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in HerdrEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHerdrEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    event: (uniffiHandle: bigint, clientKey: Uint8Array, event: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
+        return jsCallback.event(
+          FfiConverterString.lift(clientKey),
+          FfiConverterTypeHerdrEvent.lift(event),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    closed: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      reason: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback = FfiConverterTypeHerdrEventSink.lift(uniffiHandle);
+        return jsCallback.closed(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(reason),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHerdrEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHerdrEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdreventsink(
+      uniffiCallbackInterfaceHerdrEventSink.vtable,
+    );
+  },
+};
+
+export interface HerdrTerminalEventSink {
+  terminalFrame(
+    clientKey: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    base64Bytes: string,
+  ): void;
+  graphicsFrame(
+    clientKey: string,
+    terminalId: string,
+    bytes: ArrayBuffer,
+  ): void;
+  control(
+    clientKey: string,
+    terminalId: string,
+    event: HerdrTerminalControlEvent,
+  ): void;
+}
+
+export class HerdrTerminalEventSinkImpl
+  extends UniffiAbstractObject
+  implements HerdrTerminalEventSink
+{
+  readonly [uniffiTypeNameSymbol] = 'HerdrTerminalEventSinkImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.bless(pointer);
+  }
+
+  terminalFrame(
+    clientKey: string,
+    terminalId: string,
+    sequence: bigint,
+    width: number,
+    height: number,
+    full: boolean,
+    base64Bytes: string,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_terminal_frame(
+          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(sequence, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(width, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt16.lower(height, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(full, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(
+            base64Bytes,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  graphicsFrame(
+    clientKey: string,
+    terminalId: string,
+    bytes: ArrayBuffer,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_graphics_frame(
+          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterArrayBuffer.lower(bytes, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  control(
+    clientKey: string,
+    terminalId: string,
+    event: HerdrTerminalControlEvent,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_herdrterminaleventsink_control(
+          uniffiTypeHerdrTerminalEventSinkImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(clientKey, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeHerdrTerminalControlEvent.lower(
+            event,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeHerdrTerminalEventSinkImplObjectFactory.pointer(this);
+      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.freePointer(pointer);
+      uniffiTypeHerdrTerminalEventSinkImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HerdrTerminalEventSinkImpl {
+    return uniffiTypeHerdrTerminalEventSinkImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeHerdrTerminalEventSinkImplObjectFactory: UniffiObjectFactory<HerdrTerminalEventSink> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HerdrTerminalEventSink {
+        const instance = Object.create(HerdrTerminalEventSinkImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HerdrTerminalEventSinkImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_herdrterminaleventsink_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HerdrTerminalEventSink): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HerdrTerminalEventSink): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_herdrterminaleventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_herdrterminaleventsink(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HerdrTerminalEventSink {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HerdrTerminalEventSinkImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHerdrTerminalEventSink =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeHerdrTerminalEventSinkImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in HerdrTerminalEventSink.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceHerdrTerminalEventSink: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    terminal_frame: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      terminalId: Uint8Array,
+      sequence: bigint,
+      width: number,
+      height: number,
+      full: number,
+      base64Bytes: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+        return jsCallback.terminalFrame(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(terminalId),
+          FfiConverterUInt64.lift(sequence),
+          FfiConverterUInt16.lift(width),
+          FfiConverterUInt16.lift(height),
+          FfiConverterBool.lift(full),
+          FfiConverterString.lift(base64Bytes),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    graphics_frame: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      terminalId: Uint8Array,
+      bytes: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+        return jsCallback.graphicsFrame(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(terminalId),
+          FfiConverterArrayBuffer.lift(bytes),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    control: (
+      uniffiHandle: bigint,
+      clientKey: Uint8Array,
+      terminalId: Uint8Array,
+      event: Uint8Array,
+    ) => {
+      const uniffiMakeCall = (): void => {
+        const jsCallback =
+          FfiConverterTypeHerdrTerminalEventSink.lift(uniffiHandle);
+        return jsCallback.control(
+          FfiConverterString.lift(clientKey),
+          FfiConverterString.lift(terminalId),
+          FfiConverterTypeHerdrTerminalControlEvent.lift(event),
+        );
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeHerdrTerminalEventSink.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeHerdrTerminalEventSink.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdrterminaleventsink(
+      uniffiCallbackInterfaceHerdrTerminalEventSink.vtable,
+    );
+  },
+};
+
+export interface HostProfileStoreLike {
+  hydrate(persisted: string | undefined): /*throws*/ HostProfileStoreView;
+  jumpCandidates(profileId: string): /*throws*/ Array<HostProfileRecord>;
+  markDisconnected(id: string, now: string): /*throws*/ HostProfileStoreView;
+  migrateLegacy(
+    persisted: string,
+    now: string,
+  ): /*throws*/ HostProfileRecord | undefined;
+  normalizeProfile(
+    profile: HostProfileRecord,
+    previousCreatedAt: string | undefined,
+    now: string,
+  ): /*throws*/ HostProfileRecord;
+  remove(id: string, now: string): /*throws*/ HostProfileStoreView;
+  resolveJumpChain(
+    profileId: string,
+    jumpHostId: string | undefined,
+  ): /*throws*/ Array<HostProfileRecord>;
+  upsert(
+    profile: HostProfileRecord,
+    now: string,
+  ): /*throws*/ HostProfileStoreView;
+  view(): /*throws*/ HostProfileStoreView;
+}
+/**
+ * @deprecated Use `HostProfileStoreLike` instead.
+ */
+export type HostProfileStoreInterface = HostProfileStoreLike;
+
+export class HostProfileStore
+  extends UniffiAbstractObject
+  implements HostProfileStoreLike
+{
+  readonly [uniffiTypeNameSymbol] = 'HostProfileStore';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_hostprofilestore_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeHostProfileStoreObjectFactory.bless(pointer);
+  }
+
+  hydrate(persisted: string | undefined): HostProfileStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostProfileStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_hydrate(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterOptionalString.lower(
+              persisted,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  jumpCandidates(profileId: string): Array<HostProfileRecord> /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeHostProfileRecord.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_jump_candidates(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              profileId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  markDisconnected(id: string, now: string): HostProfileStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostProfileStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_mark_disconnected(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(now, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  migrateLegacy(
+    persisted: string,
+    now: string,
+  ): HostProfileRecord | undefined /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeHostProfileRecord.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_migrate_legacy(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              persisted,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(now, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  normalizeProfile(
+    profile: HostProfileRecord,
+    previousCreatedAt: string | undefined,
+    now: string,
+  ): HostProfileRecord /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostProfileRecord.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_normalize_profile(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterTypeHostProfileRecord.lower(
+              profile,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              previousCreatedAt,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(now, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  remove(id: string, now: string): HostProfileStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostProfileStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_remove(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(now, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  resolveJumpChain(
+    profileId: string,
+    jumpHostId: string | undefined,
+  ): Array<HostProfileRecord> /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeHostProfileRecord.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_resolve_jump_chain(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              profileId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              jumpHostId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  upsert(
+    profile: HostProfileRecord,
+    now: string,
+  ): HostProfileStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostProfileStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_upsert(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            FfiConverterTypeHostProfileRecord.lower(
+              profile,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(now, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  view(): HostProfileStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostProfileStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeHostProfileStoreError.lift.bind(
+          FfiConverterTypeHostProfileStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostprofilestore_view(
+            uniffiTypeHostProfileStoreObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeHostProfileStoreObjectFactory.pointer(this);
+      uniffiTypeHostProfileStoreObjectFactory.freePointer(pointer);
+      uniffiTypeHostProfileStoreObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is HostProfileStore {
+    return uniffiTypeHostProfileStoreObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeHostProfileStoreObjectFactory: UniffiObjectFactory<HostProfileStoreLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): HostProfileStoreLike {
+        const instance = Object.create(HostProfileStore.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'HostProfileStore';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_hostprofilestore_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: HostProfileStoreLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: HostProfileStoreLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_hostprofilestore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_hostprofilestore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is HostProfileStoreLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'HostProfileStore'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeHostProfileStore = new FfiConverterObject(
+  uniffiTypeHostProfileStoreObjectFactory,
+);
+
 export interface HostRuntimeEventSink {
   event(event: HostRuntimeEvent): void;
 }
@@ -21073,6 +23896,286 @@ const uniffiCallbackInterfaceHostRuntimeEventSink: {
     );
   },
 };
+
+export interface KnownHostStoreLike {
+  commit(token: bigint): /*throws*/ KnownHostStoreView;
+  hydrate(persisted: string | undefined): /*throws*/ KnownHostStoreView;
+  prepareAdd(
+    challenge: HostKeyChallenge,
+    id: string,
+    createdAt: string,
+  ): /*throws*/ KnownHostMutation;
+  prepareRemove(id: string): /*throws*/ KnownHostMutation;
+  rollback(token: bigint): /*throws*/ KnownHostStoreView;
+  view(): /*throws*/ KnownHostStoreView;
+}
+/**
+ * @deprecated Use `KnownHostStoreLike` instead.
+ */
+export type KnownHostStoreInterface = KnownHostStoreLike;
+
+export class KnownHostStore
+  extends UniffiAbstractObject
+  implements KnownHostStoreLike
+{
+  readonly [uniffiTypeNameSymbol] = 'KnownHostStore';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_knownhoststore_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeKnownHostStoreObjectFactory.bless(pointer);
+  }
+
+  commit(token: bigint): KnownHostStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+          FfiConverterTypeKnownHostStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_commit(
+            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(token, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  hydrate(persisted: string | undefined): KnownHostStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+          FfiConverterTypeKnownHostStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_hydrate(
+            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
+            FfiConverterOptionalString.lower(
+              persisted,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  prepareAdd(
+    challenge: HostKeyChallenge,
+    id: string,
+    createdAt: string,
+  ): KnownHostMutation /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostMutation.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+          FfiConverterTypeKnownHostStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_prepare_add(
+            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
+            FfiConverterTypeHostKeyChallenge.lower(
+              challenge,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(
+              createdAt,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  prepareRemove(id: string): KnownHostMutation /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostMutation.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+          FfiConverterTypeKnownHostStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_prepare_remove(
+            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  rollback(token: bigint): KnownHostStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+          FfiConverterTypeKnownHostStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_rollback(
+            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(token, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  view(): KnownHostStoreView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostStoreView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
+          FfiConverterTypeKnownHostStoreError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_view(
+            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeKnownHostStoreObjectFactory.pointer(this);
+      uniffiTypeKnownHostStoreObjectFactory.freePointer(pointer);
+      uniffiTypeKnownHostStoreObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is KnownHostStore {
+    return uniffiTypeKnownHostStoreObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeKnownHostStoreObjectFactory: UniffiObjectFactory<KnownHostStoreLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): KnownHostStoreLike {
+        const instance = Object.create(KnownHostStore.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'KnownHostStore';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_knownhoststore_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: KnownHostStoreLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: KnownHostStoreLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_knownhoststore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_knownhoststore(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is KnownHostStoreLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'KnownHostStore'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeKnownHostStore = new FfiConverterObject(
+  uniffiTypeKnownHostStoreObjectFactory,
+);
 
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
@@ -21379,6 +24482,11 @@ const FfiConverterSequenceTypeAgentTranscriptTurn = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptTurn,
 );
 
+// FfiConverter for HerdrAgentStatus | undefined
+const FfiConverterOptionalTypeHerdrAgentStatus = new FfiConverterOptional(
+  FfiConverterTypeHerdrAgentStatus,
+);
+
 // FfiConverter for Array<AgentTranscriptDelta>
 const FfiConverterSequenceTypeAgentTranscriptDelta = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptDelta,
@@ -21387,11 +24495,6 @@ const FfiConverterSequenceTypeAgentTranscriptDelta = new FfiConverterArray(
 // FfiConverter for AgentTranscriptCacheWrite | undefined
 const FfiConverterOptionalTypeAgentTranscriptCacheWrite =
   new FfiConverterOptional(FfiConverterTypeAgentTranscriptCacheWrite);
-
-// FfiConverter for Array<GitDiffRow>
-const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
-  FfiConverterTypeGitDiffRow,
-);
 
 // FfiConverter for boolean | undefined
 const FfiConverterOptionalBoolean = new FfiConverterOptional(FfiConverterBool);
@@ -21417,26 +24520,6 @@ const FfiConverterOptionalTypeHerdrAgentSessionInfo = new FfiConverterOptional(
   FfiConverterTypeHerdrAgentSessionInfo,
 );
 
-// FfiConverter for HerdrPaneScrollInfo | undefined
-const FfiConverterOptionalTypeHerdrPaneScrollInfo = new FfiConverterOptional(
-  FfiConverterTypeHerdrPaneScrollInfo,
-);
-
-// FfiConverter for Array<HerdrPaneLayoutPane>
-const FfiConverterSequenceTypeHerdrPaneLayoutPane = new FfiConverterArray(
-  FfiConverterTypeHerdrPaneLayoutPane,
-);
-
-// FfiConverter for Array<HerdrPaneLayoutSplit>
-const FfiConverterSequenceTypeHerdrPaneLayoutSplit = new FfiConverterArray(
-  FfiConverterTypeHerdrPaneLayoutSplit,
-);
-
-// FfiConverter for HerdrPaneZoomReason | undefined
-const FfiConverterOptionalTypeHerdrPaneZoomReason = new FfiConverterOptional(
-  FfiConverterTypeHerdrPaneZoomReason,
-);
-
 // FfiConverter for Array<HerdrAgentInfo>
 const FfiConverterSequenceTypeHerdrAgentInfo = new FfiConverterArray(
   FfiConverterTypeHerdrAgentInfo,
@@ -21456,9 +24539,24 @@ const FfiConverterSequenceTypeHerdrTabInfo = new FfiConverterArray(
   FfiConverterTypeHerdrTabInfo,
 );
 
+// FfiConverter for HerdrPaneScrollInfo | undefined
+const FfiConverterOptionalTypeHerdrPaneScrollInfo = new FfiConverterOptional(
+  FfiConverterTypeHerdrPaneScrollInfo,
+);
+
 // FfiConverter for Array<HerdrPaneInfo>
 const FfiConverterSequenceTypeHerdrPaneInfo = new FfiConverterArray(
   FfiConverterTypeHerdrPaneInfo,
+);
+
+// FfiConverter for Array<HerdrPaneLayoutPane>
+const FfiConverterSequenceTypeHerdrPaneLayoutPane = new FfiConverterArray(
+  FfiConverterTypeHerdrPaneLayoutPane,
+);
+
+// FfiConverter for Array<HerdrPaneLayoutSplit>
+const FfiConverterSequenceTypeHerdrPaneLayoutSplit = new FfiConverterArray(
+  FfiConverterTypeHerdrPaneLayoutSplit,
 );
 
 // FfiConverter for Array<HerdrPaneLayoutSnapshot>
@@ -21466,14 +24564,59 @@ const FfiConverterSequenceTypeHerdrPaneLayoutSnapshot = new FfiConverterArray(
   FfiConverterTypeHerdrPaneLayoutSnapshot,
 );
 
+// FfiConverter for HerdrSessionSnapshot | undefined
+const FfiConverterOptionalTypeHerdrSessionSnapshot = new FfiConverterOptional(
+  FfiConverterTypeHerdrSessionSnapshot,
+);
+
+// FfiConverter for HostStateSnapshot | undefined
+const FfiConverterOptionalTypeHostStateSnapshot = new FfiConverterOptional(
+  FfiConverterTypeHostStateSnapshot,
+);
+
+// FfiConverter for Array<TerminalEntryView>
+const FfiConverterSequenceTypeTerminalEntryView = new FfiConverterArray(
+  FfiConverterTypeTerminalEntryView,
+);
+
+// FfiConverter for Array<AppSessionView>
+const FfiConverterSequenceTypeAppSessionView = new FfiConverterArray(
+  FfiConverterTypeAppSessionView,
+);
+
+// FfiConverter for Array<GitDiffRow>
+const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
+  FfiConverterTypeGitDiffRow,
+);
+
+// FfiConverter for Array<HerdHostView>
+const FfiConverterSequenceTypeHerdHostView = new FfiConverterArray(
+  FfiConverterTypeHerdHostView,
+);
+
+// FfiConverter for Array<HerdAgentView>
+const FfiConverterSequenceTypeHerdAgentView = new FfiConverterArray(
+  FfiConverterTypeHerdAgentView,
+);
+
+// FfiConverter for HerdrPaneZoomReason | undefined
+const FfiConverterOptionalTypeHerdrPaneZoomReason = new FfiConverterOptional(
+  FfiConverterTypeHerdrPaneZoomReason,
+);
+
+// FfiConverter for Array<HostProfileRecord>
+const FfiConverterSequenceTypeHostProfileRecord = new FfiConverterArray(
+  FfiConverterTypeHostProfileRecord,
+);
+
 // FfiConverter for Array<HostSshConfig>
 const FfiConverterSequenceTypeHostSshConfig = new FfiConverterArray(
   FfiConverterTypeHostSshConfig,
 );
 
-// FfiConverter for HerdrSessionSnapshot | undefined
-const FfiConverterOptionalTypeHerdrSessionSnapshot = new FfiConverterOptional(
-  FfiConverterTypeHerdrSessionSnapshot,
+// FfiConverter for Array<KnownHostRecord>
+const FfiConverterSequenceTypeKnownHostRecord = new FfiConverterArray(
+  FfiConverterTypeKnownHostRecord,
 );
 
 // FfiConverter for Array<RemoteFileEntry>
@@ -21491,9 +24634,9 @@ const FfiConverterOptionalTypeHerdrTabInfo = new FfiConverterOptional(
   FfiConverterTypeHerdrTabInfo,
 );
 
-// FfiConverter for HerdrAgentStatus | undefined
-const FfiConverterOptionalTypeHerdrAgentStatus = new FfiConverterOptional(
-  FfiConverterTypeHerdrAgentStatus,
+// FfiConverter for Array<AgentStatusTransition>
+const FfiConverterSequenceTypeAgentStatusTransition = new FfiConverterArray(
+  FfiConverterTypeAgentStatusTransition,
 );
 
 // FfiConverter for GitRepository | undefined
@@ -21519,6 +24662,16 @@ const FfiConverterOptionalTypeHostTerminalGeometry = new FfiConverterOptional(
 // FfiConverter for TransferProgress | undefined
 const FfiConverterOptionalTypeTransferProgress = new FfiConverterOptional(
   FfiConverterTypeTransferProgress,
+);
+
+// FfiConverter for Array<HerdSessionMetadata>
+const FfiConverterSequenceTypeHerdSessionMetadata = new FfiConverterArray(
+  FfiConverterTypeHerdSessionMetadata,
+);
+
+// FfiConverter for HostProfileRecord | undefined
+const FfiConverterOptionalTypeHostProfileRecord = new FfiConverterOptional(
+  FfiConverterTypeHostProfileRecord,
 );
 
 // FfiConverter for Array<LegacySftpEntry>
@@ -22064,6 +25217,133 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_appcore_new() !==
+    56831
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_appcore_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_attach_runtime() !==
+    20483
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_attach_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_close_session() !==
+    62901
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_close_session',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_close_terminal() !==
+    20631
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_close_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_detach_runtime() !==
+    56205
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_detach_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_herd_view() !==
+    30669
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_herd_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_open_pane_terminal() !==
+    21772
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_open_pane_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_open_session() !==
+    33964
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_open_session',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell() !==
+    28494
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_open_ssh_shell',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_restore_terminals() !==
+    9675
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_restore_terminals',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_select_host() !==
+    18021
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_select_host',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_select_session() !==
+    235
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_select_session',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_select_workspace_view() !==
+    11947
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_select_workspace_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection() !==
+    62526
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_set_placeholder_connection',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle() !==
+    14254
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_appcore_view() !== 8809
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_appcore_view',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event() !==
     60721
   ) {
@@ -22101,6 +25381,86 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_herdrterminaleventsink_control',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_hostprofilestore_new() !==
+    44065
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_hostprofilestore_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_hydrate() !==
+    32273
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_hydrate',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_jump_candidates() !==
+    24737
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_jump_candidates',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_mark_disconnected() !==
+    224
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_mark_disconnected',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_migrate_legacy() !==
+    3157
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_migrate_legacy',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_normalize_profile() !==
+    45547
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_normalize_profile',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_remove() !==
+    1634
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_remove',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_resolve_jump_chain() !==
+    4653
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_resolve_jump_chain',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_upsert() !==
+    42147
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_upsert',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostprofilestore_view() !==
+    62415
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostprofilestore_view',
     );
   }
   if (
@@ -22440,6 +25800,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state() !==
+    42801
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry() !==
     38325
   ) {
@@ -22608,6 +25976,62 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_knownhoststore_new() !==
+    51550
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_knownhoststore_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_commit() !==
+    17027
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_knownhoststore_commit',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_hydrate() !==
+    22914
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_knownhoststore_hydrate',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_add() !==
+    29483
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_knownhoststore_prepare_add',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove() !==
+    59860
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback() !==
+    746
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_knownhoststore_rollback',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view() !==
+    64263
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_knownhoststore_view',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     27595
   ) {
@@ -22651,6 +26075,7 @@ export default Object.freeze({
     FfiConverterTypeAgentScalarValue,
     FfiConverterTypeAgentSessionError,
     FfiConverterTypeAgentSessionOpenResult,
+    FfiConverterTypeAgentStatusTransition,
     FfiConverterTypeAgentToolDiagnostic,
     FfiConverterTypeAgentToolState,
     FfiConverterTypeAgentToolStatus,
@@ -22667,12 +26092,20 @@ export default Object.freeze({
     FfiConverterTypeAgentTranscriptTurn,
     FfiConverterTypeAgentTranscriptUpdate,
     FfiConverterTypeAgentTurnStatus,
+    FfiConverterTypeAppConnectionStatus,
+    FfiConverterTypeAppCore,
+    FfiConverterTypeAppCoreView,
+    FfiConverterTypeAppSessionView,
     FfiConverterTypeGitDiff,
     FfiConverterTypeGitDiffKind,
     FfiConverterTypeGitDiffRow,
     FfiConverterTypeGitDiffRowKind,
     FfiConverterTypeGitRepository,
     FfiConverterTypeGitStatusEntry,
+    FfiConverterTypeHerdAgentView,
+    FfiConverterTypeHerdHostView,
+    FfiConverterTypeHerdSessionMetadata,
+    FfiConverterTypeHerdView,
     FfiConverterTypeHerdrAgentInfo,
     FfiConverterTypeHerdrAgentKind,
     FfiConverterTypeHerdrAgentSessionInfo,
@@ -22712,10 +26145,15 @@ export default Object.freeze({
     FfiConverterTypeHerdrWorkspaceInfo,
     FfiConverterTypeHerdrWorkspaceWorktreeInfo,
     FfiConverterTypeHerdrWorktreeInfo,
+    FfiConverterTypeHostAuthMode,
     FfiConverterTypeHostConnectionState,
     FfiConverterTypeHostFreshness,
     FfiConverterTypeHostKeyChallenge,
     FfiConverterTypeHostLatencyMeasurement,
+    FfiConverterTypeHostProfileRecord,
+    FfiConverterTypeHostProfileStore,
+    FfiConverterTypeHostProfileStoreError,
+    FfiConverterTypeHostProfileStoreView,
     FfiConverterTypeHostRuntime,
     FfiConverterTypeHostRuntimeConfig,
     FfiConverterTypeHostRuntimeError,
@@ -22730,7 +26168,11 @@ export default Object.freeze({
     FfiConverterTypeHostTerminalGeometry,
     FfiConverterTypeHostTerminalResizeOutcome,
     FfiConverterTypeHostTerminalState,
+    FfiConverterTypeKnownHostMutation,
+    FfiConverterTypeKnownHostRecord,
+    FfiConverterTypeKnownHostStore,
     FfiConverterTypeKnownHostStoreError,
+    FfiConverterTypeKnownHostStoreView,
     FfiConverterTypeLegacySftpEntry,
     FfiConverterTypeLegacySftpFileServer,
     FfiConverterTypePairHostError,
@@ -22744,11 +26186,16 @@ export default Object.freeze({
     FfiConverterTypeRuntimeDiagnostic,
     FfiConverterTypeRuntimeDiagnosticOperation,
     FfiConverterTypeRuntimeDiagnosticOutcome,
+    FfiConverterTypeSessionSelection,
     FfiConverterTypeSshAuthentication,
     FfiConverterTypeSshError,
     FfiConverterTypeSshErrorCode,
     FfiConverterTypeSshGeneratedKeyPair,
     FfiConverterTypeSshKeyDetails,
+    FfiConverterTypeTerminalEntryView,
+    FfiConverterTypeTerminalKind,
+    FfiConverterTypeTerminalRailView,
+    FfiConverterTypeTerminalUiState,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,
