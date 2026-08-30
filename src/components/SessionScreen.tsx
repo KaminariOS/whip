@@ -762,8 +762,7 @@ export function SessionScreen({
 
   useEffect(() => {
     if (
-      !projectedActiveChatView ||
-      projectedActiveChatView.presentation.phase !==
+      projectedActiveChatView?.presentation.phase !==
         AgentChatPresentationPhase.Failed
     ) return;
     const generation = projectedActiveChatView.presentation.generation;
@@ -1219,8 +1218,7 @@ export function SessionScreen({
       setChatViews(current => {
         const view = current.get(terminalId);
         if (
-          !view ||
-          view.key !== activeChatView.key ||
+          view?.key !== activeChatView.key ||
           view.state.sessionId !== activeChatView.state.sessionId
         ) return current;
         const presentation = requestChatPresentation(
@@ -1726,8 +1724,7 @@ export function SessionScreen({
                         setChatViews(current => {
                           const view = current.get(terminalId);
                           if (
-                            !view ||
-                            view.agent !== activeChatView.agent ||
+                            view?.agent !== activeChatView.agent ||
                             view.key !== activeChatView.key ||
                             view.state.sessionId !==
                               activeChatView.state.sessionId ||
