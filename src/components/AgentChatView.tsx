@@ -253,7 +253,7 @@ function isRunning(item: TranscriptToolPart): boolean {
 function ToolCard({ item }: { item: TranscriptToolPart }) {
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
-  const [expanded, setExpanded] = useState(failed);
+  const [expanded, setExpanded] = useState(false);
   const presentation = toolPresentation(item);
   const name = item.tool.toLowerCase();
   const files = item.state.files;

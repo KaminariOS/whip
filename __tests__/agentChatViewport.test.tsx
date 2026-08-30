@@ -6,7 +6,12 @@ import {
   type ReactTestRenderer,
 } from 'react-test-renderer';
 
-import { emptyTranscript, type AgentChatState, type TranscriptTurn } from '../src/agentChat';
+import {
+  emptyTranscript,
+  type AgentChatState,
+  type TranscriptToolPart,
+  type TranscriptTurn,
+} from '../src/agentChat';
 import { AgentChatView } from '../src/components/AgentChatView';
 
 jest.mock(
@@ -146,6 +151,40 @@ const SHELL_TURN: TranscriptTurn = {
   status: 'idle',
 };
 
+function toolTurn(part: TranscriptToolPart): TranscriptTurn {
+  return {
+    assistants: [{
+      diffs: [],
+      id: 'assistant-tool',
+      parts: [part],
+      role: 'assistant',
+    }],
+    diffs: [],
+    id: 'turn-tool',
+    status: 'idle',
+  };
+}
+
+function failedTool(tool: 'shell' | 'write'): TranscriptToolPart {
+  return {
+    callId: `call-${tool}`,
+    id: `tool-${tool}`,
+    state: {
+      diagnostics: [],
+      error: `${tool} failed details`,
+      files: [],
+      input: tool === 'shell'
+        ? { command: 'exit 1' }
+        : { content: 'replacement', path: 'failed.txt' },
+      loaded: [],
+      output: tool === 'shell' ? 'command failed output' : undefined,
+      status: 'error',
+    },
+    tool,
+    type: 'tool',
+  };
+}
+
 describe('AgentChatView viewport insets', () => {
   let renderer: ReactTestRenderer;
   let boundaries: ReactTestRenderer;
@@ -250,6 +289,72 @@ describe('AgentChatView tool output', () => {
     expect(commandHighlighter.props.scrollViewProps.nestedScrollEnabled).toBe(true);
     expect(horizontalScroller.props.className).toBe('w-full');
     expect(horizontalScroller.props.nestedScrollEnabled).toBe(true);
+  });
+
+  test.each(['shell', 'write'] as const)(
+    'keeps a failed %s tool collapsed until manually expanded',
+    tool => {
+      const turn = toolTurn(failedTool(tool));
+      act(() => {
+        renderer = create(chatView(chatState([turn])));
+      });
+      act(() => {
+        turnRenderer = create(flatList(renderer).props.renderItem({
+          index: 0,
+          item: turn,
+        }));
+      });
+
+      const collapsedToggle = turnRenderer.root.find(node => (
+        String(node.type) === 'Pressable'
+        && node.props.accessibilityState?.expanded === false
+      ));
+      expect(turnRenderer.root.find(node => String(node.type) === 'CircleAlert')).toBeDefined();
+      expect(turnRenderer.root.find(node => (
+        String(node.type) === 'View'
+        && node.props.className?.includes('bg-destructive/10')
+      ))).toBeDefined();
+      expect(turnRenderer.root.findAll(node => node.props.children === `${tool} failed details`)).toHaveLength(0);
+
+      act(() => {
+        void collapsedToggle.props.onPress();
+      });
+
+      expect(turnRenderer.root.find(node => (
+        String(node.type) === 'Pressable'
+        && node.props.accessibilityState?.expanded === true
+      ))).toBeDefined();
+      expect(turnRenderer.root.findAll(node => node.props.children === `${tool} failed details`)).not.toHaveLength(0);
+    },
+  );
+
+  test('does not expand when a running tool transitions to an error', () => {
+    const running = failedTool('shell');
+    running.state = { ...running.state, error: undefined, status: 'running' };
+    const runningTurn = toolTurn(running);
+    act(() => {
+      renderer = create(chatView(chatState([runningTurn])));
+    });
+    act(() => {
+      turnRenderer = create(flatList(renderer).props.renderItem({
+        index: 0,
+        item: runningTurn,
+      }));
+    });
+
+    const failedTurn = toolTurn(failedTool('shell'));
+    act(() => {
+      turnRenderer.update(flatList(renderer).props.renderItem({
+        index: 0,
+        item: failedTurn,
+      }));
+    });
+
+    expect(turnRenderer.root.find(node => (
+      String(node.type) === 'Pressable'
+      && node.props.accessibilityState?.expanded === false
+    ))).toBeDefined();
+    expect(turnRenderer.root.findAll(node => node.props.children === 'shell failed details')).toHaveLength(0);
   });
 });
 
