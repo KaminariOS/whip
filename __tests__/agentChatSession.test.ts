@@ -168,18 +168,31 @@ describe('initial Chat presentation lifecycle', () => {
     expect(chatPresentationLoading(visible)).toBe(false);
   });
 
-  test('a transcript loading error stops the opening spinner without revealing Chat', () => {
+  test('a retryable loading error keeps spinning without showing a failure', () => {
     const loading = requestChatPresentation(
       dormantChatPresentation(),
       'loading',
       6,
     );
-    const failed = updateChatTranscriptReadiness(loading, 'failed', 6);
+    const retrying = updateChatTranscriptReadiness(loading, 'failed', 6);
 
-    expect(failed.phase).toBe(AgentChatPresentationPhase.Failed);
-    expect(chatPresentationLoading(failed)).toBe(false);
-    expect(chatPresentationVisible(failed)).toBe(false);
-    expect(chatPresentationMountsViewport(failed)).toBe(false);
+    expect(retrying).toBe(loading);
+    expect(chatPresentationLoading(retrying)).toBe(true);
+    expect(chatPresentationVisible(retrying)).toBe(false);
+    expect(chatPresentationMountsViewport(retrying)).toBe(false);
+  });
+
+  test('a first-open failure recovers without requiring a second Chat request', () => {
+    const retrying = requestChatPresentation(
+      dormantChatPresentation(),
+      'failed',
+      7,
+    );
+    const recovered = updateChatTranscriptReadiness(retrying, 'usable', 7);
+
+    expect(retrying.phase).toBe(AgentChatPresentationPhase.LoadingTranscript);
+    expect(recovered.phase).toBe(AgentChatPresentationPhase.PreparingViewport);
+    expect(chatPresentationLoading(recovered)).toBe(true);
   });
 
   test('a viewport callback from a replaced terminal or session generation is ignored', () => {

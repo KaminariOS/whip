@@ -40,7 +40,6 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import {
-  ActivityIndicator,
   AppState,
   Clipboard,
   Image,
@@ -132,7 +131,7 @@ import {
   OverlayScrollbar,
   type OverlayScrollbarDragEvent,
 } from './OverlayScrollbar';
-import { useReducedMotion } from './app-ui';
+import { AnimatedAgentStatusGlyph, useReducedMotion } from './app-ui';
 import { AppAlertPopup } from './AppAlertPopup';
 import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
@@ -1758,7 +1757,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           >
             <View className={TERMINAL_ICON_BOX_CLASS}>
               {chatControl.loading ? (
-                <ActivityIndicator color={appColors.primary} size="small" />
+                <AnimatedAgentStatusGlyph
+                  status="working"
+                  color={appColors.primary}
+                  size={TERMINAL_ICON_SIZE}
+                />
               ) : chatControl.active ? (
                 <SquareTerminal
                   size={TERMINAL_ICON_SIZE}

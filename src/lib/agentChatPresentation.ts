@@ -32,9 +32,7 @@ export function requestChatPresentation(
     phase:
       readiness === 'usable'
         ? AgentChatPresentationPhase.PreparingViewport
-        : readiness === 'loading'
-        ? AgentChatPresentationPhase.LoadingTranscript
-        : AgentChatPresentationPhase.Failed,
+        : AgentChatPresentationPhase.LoadingTranscript,
   };
 }
 
@@ -44,12 +42,15 @@ export function updateChatTranscriptReadiness(
   resetGeneration: number,
 ): AgentChatPresentation {
   if (readiness === 'usable') {
-    return current.phase === AgentChatPresentationPhase.LoadingTranscript
+    return current.phase === AgentChatPresentationPhase.LoadingTranscript ||
+      current.phase === AgentChatPresentationPhase.Failed
       ? { ...current, phase: AgentChatPresentationPhase.PreparingViewport }
       : current;
   }
   if (readiness === 'failed') {
-    return chatPresentationRequested(current)
+    return current.phase === AgentChatPresentationPhase.LoadingTranscript
+      ? current
+      : chatPresentationRequested(current)
       ? { ...current, phase: AgentChatPresentationPhase.Failed }
       : current.phase === AgentChatPresentationPhase.Warm
       ? {
