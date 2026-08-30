@@ -82,6 +82,7 @@ def uploadKeystorePropertiesFile = uploadKeystorePropertiesPath
     : new File(System.getProperty('user.home'), '.config/whip/upload-keystore.properties')
 def hasUploadSigning = uploadKeystorePropertiesFile.isFile()
 def usePreviewSigning = (findProperty('whip.previewSigning') ?: 'false').toBoolean()
+def skipR8 = (findProperty('whip.skipR8') ?: 'false').toBoolean()
 
 if (hasUploadSigning) {
     uploadKeystorePropertiesFile.withInputStream {
@@ -140,8 +141,10 @@ android {
             signingConfig = usePreviewSigning
                 ? signingConfigs.debug
                 : hasUploadSigning ? signingConfigs.upload : signingConfigs.debug
-            minifyEnabled = true
-            shrinkResources = true
+            // Local device builds can opt out of the expensive R8 pass. Store
+            // and CI builds omit whip.skipR8 and remain optimized.
+            minifyEnabled = !skipR8
+            shrinkResources = !skipR8
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

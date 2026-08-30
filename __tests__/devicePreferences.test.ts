@@ -71,6 +71,7 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
   expect(defaultDevicePreferences.developerOptionsEnabled).toBe(false);
+  expect(defaultDevicePreferences.rancherPaymentsEnabled).toBe(false);
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
@@ -102,6 +103,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     appBackgroundDimming: 60,
     appGlassEnabled: false,
     developerOptionsEnabled: false,
+    rancherPaymentsEnabled: false,
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
@@ -330,6 +332,22 @@ test('enables terminal visual hints only through developer options', async () =>
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     developerOptionsEnabled: false,
     terminal: { visualHints: false },
+  });
+});
+
+test('keeps Rancher payments disabled by default and parses an explicit toggle', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    rancherPaymentsEnabled: true,
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    rancherPaymentsEnabled: true,
+  });
+
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({
+    rancherPaymentsEnabled: 'true',
+  }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({
+    rancherPaymentsEnabled: false,
   });
 });
 

@@ -13,6 +13,9 @@ import type { useApplicationSecurity } from '../hooks/useApplicationSecurity';
 import type { useLiveHostTelemetry } from '../hooks/useLiveHostTelemetry';
 import type { useTerminalHistory } from '../hooks/useTerminalHistory';
 import type { useTerminalSessions } from '../hooks/useTerminalSessions';
+import { effectiveDevicePreferences } from '../billing/effectiveSettings';
+import { resolveAccessTier } from '../billing/tiers';
+import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import type { HerdHostQueue } from '../herdQueue';
 import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
 import { shouldEnableAppGlass } from '../lib/appGlass';
@@ -47,6 +50,7 @@ const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
 
 interface AppShellProps {
   preferences: DevicePreferencesController;
+  entitlements: WhipEntitlementsController;
   hosts: HostManagementController;
   sessions: SessionRuntimeController;
   navigation: AppNavigationController;
@@ -60,6 +64,7 @@ interface AppShellProps {
 /** Main application presentation. State and lifecycle stay in domain controllers. */
 export function AppShell({
   preferences,
+  entitlements,
   hosts,
   sessions,
   navigation,
@@ -72,6 +77,18 @@ export function AppShell({
   const { t } = useTranslation();
   const { colors: theme, isDark } = useTheme();
   const navigationBlurTargetRef = useRef<View | null>(null);
+  const storedPreferences = preferences.value;
+  const rancherPaymentsEnabled =
+    storedPreferences.developerOptionsEnabled &&
+    storedPreferences.rancherPaymentsEnabled;
+  const accessTier = resolveAccessTier(
+    entitlements.tier,
+    rancherPaymentsEnabled,
+  );
+  const effectivePreferences = useMemo(
+    () => effectiveDevicePreferences(storedPreferences, accessTier),
+    [accessTier, storedPreferences],
+  );
   const {
     alertsEnabled,
     persistentAlertDurationSeconds,
@@ -90,7 +107,7 @@ export function AppShell({
     agentCommand,
     terminal: terminalPreferences,
     terminalControlUsage,
-  } = preferences.value;
+  } = effectivePreferences;
   const activeSession = sessions.activeSession;
   const activeTelemetry = activeSession
     ? telemetry.get(activeSession.id)
@@ -388,16 +405,23 @@ export function AppShell({
                       }
                       appearance={appearance}
                       fullscreenApp={fullscreenApp}
-                      appBackgroundImageUri={appBackgroundImageUri}
-                      appBackgroundDimming={appBackgroundDimming}
-                      appGlassEnabled={appGlassEnabled}
+                      appBackgroundImageUri={
+                        storedPreferences.appBackgroundImageUri
+                      }
+                      appBackgroundDimming={
+                        storedPreferences.appBackgroundDimming
+                      }
+                      appGlassEnabled={storedPreferences.appGlassEnabled}
+                      accessTier={accessTier}
+                      entitlements={entitlements}
                       developerOptionsEnabled={developerOptionsEnabled}
+                      rancherPaymentsEnabled={rancherPaymentsEnabled}
                       language={language}
                       keepScreenOn={keepScreenOn}
                       reopenTerminalOnLaunch={reopenTerminalOnLaunch}
                       agentCommand={agentCommand}
                       terminalHistory={history.entries}
-                      terminalPreferences={terminalPreferences}
+                      terminalPreferences={storedPreferences.terminal}
                       onAlertsChange={value =>
                         preferences.setPreference('alertsEnabled', value)
                       }
@@ -471,6 +495,10 @@ export function AppShell({
                           value,
                         );
                         if (!value) {
+                          preferences.setPreference(
+                            'rancherPaymentsEnabled',
+                            false,
+                          );
                           preferences.setTerminalPreferences(current =>
                             current.visualHints
                               ? { ...current, visualHints: false }
@@ -478,6 +506,12 @@ export function AppShell({
                           );
                         }
                       }}
+                      onRancherPaymentsEnabledChange={value =>
+                        preferences.setPreference(
+                          'rancherPaymentsEnabled',
+                          value,
+                        )
+                      }
                       onLanguageChange={value =>
                         preferences.setPreference('language', value)
                       }
@@ -589,7 +623,7 @@ export function AppShell({
             )}
 
             <AppOverlays
-              preferences={preferences}
+              effectivePreferences={effectivePreferences}
               hosts={hosts}
               sessions={sessions}
               navigation={navigation}

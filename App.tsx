@@ -27,6 +27,7 @@ import {
 import { useStartupStorage } from './src/hooks/useStartupStorage';
 import { useTerminalHistory } from './src/hooks/useTerminalHistory';
 import { useTerminalSessions } from './src/hooks/useTerminalSessions';
+import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
 
 const guiFontAssets = {
   [guiFontFamilies.regular]: bundledAsset(require('./assets/gui-fonts/Inter-Regular.ttf')),
@@ -56,12 +57,17 @@ function AppContent() {
   const { t } = useTranslation();
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);
+  const preferencesLoaded = preferences.hydration.status !== 'loading';
+  const rancherPaymentsEnabled =
+    preferencesLoaded &&
+    preferences.value.developerOptionsEnabled &&
+    preferences.value.rancherPaymentsEnabled;
+  const entitlements = useWhipEntitlements(rancherPaymentsEnabled);
   const terminals = useTerminalSessions();
   const telemetry = useLiveHostTelemetry();
   const notifications = useAgentNotifications();
   const [deferredHydrationReady, setDeferredHydrationReady] = useState(false);
   const sessionsRef = useRef<SessionRuntimeController | null>(null);
-  const preferencesLoaded = preferences.hydration.status !== 'loading';
 
   const security = useApplicationSecurity({
     preferencesLoaded,
@@ -149,6 +155,7 @@ function AppContent() {
   return (
     <AppShell
       preferences={preferences}
+      entitlements={entitlements}
       hosts={hosts}
       sessions={sessions}
       navigation={navigation}

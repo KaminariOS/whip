@@ -108,7 +108,11 @@ export interface SettingsSectionProps {
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
+  customAppBackgroundUnlocked: boolean;
+  customTerminalBackgroundUnlocked: boolean;
+  glassUnlocked: boolean;
   developerOptionsEnabled: boolean;
+  rancherPaymentsEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -127,7 +131,9 @@ export interface SettingsSectionProps {
   onAppBackgroundImageChange: (value: string | null) => void;
   onAppBackgroundDimmingChange: (value: number) => void;
   onAppGlassEnabledChange: (value: boolean) => void;
+  onOpenRancher: () => Promise<unknown>;
   onDeveloperOptionsEnabledChange: (value: boolean) => void;
+  onRancherPaymentsEnabledChange: (value: boolean) => void;
   onLanguageChange: (value: LanguagePreference) => void;
   onKeepScreenOnChange: (value: boolean) => void;
   onReopenTerminalOnLaunchChange: (value: boolean) => void;
@@ -282,9 +288,11 @@ export function SettingsSection(props: SettingsSectionProps) {
             busy={appBackground.busy}
             uri={props.appBackgroundImageUri}
             dimming={props.appBackgroundDimming}
+            locked={!props.customAppBackgroundUnlocked}
             variant="app"
             onChoose={appBackground.choose}
             onRemove={appBackground.remove}
+            onLockedPress={props.onOpenRancher}
           />
           <SliderRow
             title={t('settings.backgroundDimming')}
@@ -293,17 +301,23 @@ export function SettingsSection(props: SettingsSectionProps) {
             maximumValue={100}
             step={5}
             formatValue={value => `${value}%`}
-            disabled={!props.appBackgroundImageUri}
+            disabled={!props.appBackgroundImageUri || !props.customAppBackgroundUnlocked}
+            locked={!props.customAppBackgroundUnlocked}
+            onLockedPress={props.onOpenRancher}
             onChange={props.onAppBackgroundDimmingChange}
             divided
           />
           <SettingRow
             title={t('settings.experimentalGlass')}
-            copy={props.appBackgroundImageUri
-              ? t('settings.experimentalGlassCopy')
-              : t('settings.experimentalGlassRequiresImage')}
+            copy={!props.glassUnlocked
+              ? t('settings.rancherGlassCopy')
+              : props.appBackgroundImageUri
+                ? t('settings.experimentalGlassCopy')
+                : t('settings.experimentalGlassRequiresImage')}
             value={props.appGlassEnabled}
-            disabled={!props.appBackgroundImageUri}
+            disabled={!props.appBackgroundImageUri || !props.glassUnlocked}
+            locked={!props.glassUnlocked}
+            onLockedPress={props.onOpenRancher}
             onChange={props.onAppGlassEnabledChange}
             divided
           />
@@ -388,9 +402,11 @@ export function SettingsSection(props: SettingsSectionProps) {
           busy={terminalBackground.busy}
           uri={props.terminalPreferences.backgroundImageUri}
           dimming={props.terminalPreferences.backgroundDimming}
+          locked={!props.customTerminalBackgroundUnlocked}
           variant="terminal"
           onChoose={terminalBackground.choose}
           onRemove={terminalBackground.remove}
+          onLockedPress={props.onOpenRancher}
         />
         <SliderRow
           title={t('settings.backgroundDimming')}
@@ -399,7 +415,9 @@ export function SettingsSection(props: SettingsSectionProps) {
           maximumValue={100}
           step={5}
           formatValue={value => `${value}%`}
-          disabled={!props.terminalPreferences.backgroundImageUri}
+          disabled={!props.terminalPreferences.backgroundImageUri || !props.customTerminalBackgroundUnlocked}
+          locked={!props.customTerminalBackgroundUnlocked}
+          onLockedPress={props.onOpenRancher}
           onChange={backgroundDimming => props.onTerminalPreferencesChange({ ...props.terminalPreferences, backgroundDimming })}
           divided
         />
@@ -413,16 +431,27 @@ export function SettingsSection(props: SettingsSectionProps) {
           value={props.developerOptionsEnabled}
           onChange={props.onDeveloperOptionsEnabledChange}
         />
-        {props.developerOptionsEnabled ? <SettingRow
-          title={t('settings.terminalVisualHints')}
-          copy={t('settings.terminalVisualHintsCopy')}
-          value={props.terminalPreferences.visualHints}
-          onChange={value => props.onTerminalPreferencesChange({
-            ...props.terminalPreferences,
-            visualHints: value,
-          })}
-          divided
-        /> : null}
+        {props.developerOptionsEnabled ? (
+          <>
+            <SettingRow
+              title={t('settings.rancherPayments')}
+              copy={t('settings.rancherPaymentsCopy')}
+              value={props.rancherPaymentsEnabled}
+              onChange={props.onRancherPaymentsEnabledChange}
+              divided
+            />
+            <SettingRow
+              title={t('settings.terminalVisualHints')}
+              copy={t('settings.terminalVisualHintsCopy')}
+              value={props.terminalPreferences.visualHints}
+              onChange={value => props.onTerminalPreferencesChange({
+                ...props.terminalPreferences,
+                visualHints: value,
+              })}
+              divided
+            />
+          </>
+        ) : null}
       </GlassSurface>
 
       {Platform.OS === 'android' ? <VolumeKeyActionSheet
@@ -588,17 +617,31 @@ function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false,
   return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2">{copy ? <DetailsTitle title={title} copy={copy} /> : <Text className="text-[15px] font-semibold leading-5">{title}</Text>}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
 }
 
-function SliderRow({ title, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false }: { title: string; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean }) {
+function SliderRow({ title, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const formattedValue = formatValue(value);
   const fontPreviewSize = { fontSize: value, lineHeight: Math.ceil(value * 1.35) };
   return (
-    <View className={cn('px-3.5 py-3', divided && 'border-t border-border', disabled && 'opacity-50')}>
+    <Pressable
+      accessibilityHint={locked ? t('settings.opensRancher') : undefined}
+      accessibilityLabel={locked ? `${title}, Rancher` : undefined}
+      accessibilityRole={locked ? 'button' : undefined}
+      accessibilityState={{ disabled: disabled && !locked }}
+      className={cn('px-3.5 py-3', divided && 'border-t border-border', disabled && 'opacity-50')}
+      onPress={locked ? hapticPress(() => { void onLockedPress?.(); }) : undefined}>
       <View className="flex-row items-center justify-between gap-3">
-        <Text className="min-w-0 flex-1 text-[15px] font-semibold leading-5">{title}</Text>
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <Text className="min-w-0 flex-shrink text-[15px] font-semibold leading-5">{title}</Text>
+          {locked ? <RancherBadge /> : null}
+        </View>
         <Text className="font-mono text-xs font-semibold text-primary">{formattedValue}</Text>
       </View>
-      <Slider
+      <View
+        accessibilityElementsHidden={locked}
+        importantForAccessibility={locked ? 'no-hide-descendants' : 'auto'}
+        pointerEvents={locked ? 'none' : 'auto'}>
+        <Slider
         accessibilityLabel={title}
         accessibilityRole="adjustable"
         accessibilityState={{ disabled }}
@@ -614,13 +657,14 @@ function SliderRow({ title, value, minimumValue, maximumValue, step, formatValue
         thumbTintColor={colors.primary}
         value={value}
         onValueChange={onChange}
-      />
+        />
+      </View>
       {fontPreview ? (
         <View className="mt-1 overflow-hidden rounded-md bg-terminal-canvas px-3 py-2.5">
           <Text numberOfLines={1} className="text-terminal-text" style={[styles.fontPreviewText, fontPreviewSize]}>$ herdr status</Text>
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -938,12 +982,15 @@ function TerminalHistoryManager({
   );
 }
 
-function BackgroundImageRow({ busy, uri, dimming, variant, onChoose, onRemove }: { busy: boolean; uri: string | null; dimming: number; variant: 'app' | 'terminal'; onChoose: () => Promise<void>; onRemove: () => Promise<void> }) {
+function BackgroundImageRow({ busy, uri, dimming, locked, variant, onChoose, onRemove, onLockedPress }: { busy: boolean; uri: string | null; dimming: number; locked: boolean; variant: 'app' | 'terminal'; onChoose: () => Promise<void>; onRemove: () => Promise<void>; onLockedPress: () => Promise<unknown> }) {
   const { t } = useTranslation();
   const terminal = variant === 'terminal';
   return (
     <View className={terminal ? 'border-t border-border p-3.5' : 'p-3.5'}>
-      <View className="mb-3"><DetailsTitle title={t('settings.backgroundImage')} copy={t('settings.backgroundImageCopy')} /></View>
+      <View className="mb-3 flex-row items-center gap-2">
+        <View className="min-w-0 flex-1"><DetailsTitle title={t('settings.backgroundImage')} copy={t(locked ? 'settings.rancherBackgroundCopy' : 'settings.backgroundImageCopy')} /></View>
+        {locked ? <RancherBadge /> : null}
+      </View>
       <View className={cn('relative h-28 overflow-hidden rounded-md', terminal ? 'bg-terminal-canvas' : 'bg-background')}>
         {uri ? <Image source={{ uri }} resizeMode="cover" fadeDuration={180} className="absolute inset-0 size-full" /> : null}
         {uri ? terminal
@@ -963,8 +1010,8 @@ function BackgroundImageRow({ busy, uri, dimming, variant, onChoose, onRemove }:
         )}
       </View>
       <View className="mt-3 flex-row gap-2">
-        <Button className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(onChoose)}><Icon as={ImagePlus} size={16} /><Text>{uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>
-        {uri ? <Button className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">{t('common.remove')}</Text></Button> : null}
+        <Button accessibilityHint={locked ? t('settings.opensRancher') : undefined} className="flex-1 rounded-full" variant="secondary" disabled={busy} onPress={hapticPress(locked ? () => { void onLockedPress(); } : onChoose)}><Icon as={ImagePlus} size={16} /><Text>{locked ? t('membership.rancher') : uri ? t('settings.replaceImage') : t('settings.chooseImage')}</Text></Button>
+        {uri && !locked ? <Button className="rounded-full px-4" variant="ghost" disabled={busy} onPress={hapticPress(onRemove)}><Icon as={Trash2} className="text-destructive" size={16} /><Text className="text-destructive">{t('common.remove')}</Text></Button> : null}
       </View>
     </View>
   );
@@ -1002,8 +1049,16 @@ function DetailsTitle({ title, copy, titleClassName = 'text-[15px] font-semibold
   );
 }
 
-function SettingRow({ title, copy, value, onChange, onDetailsPress, divided = false, disabled = false }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; onDetailsPress?: () => void; divided?: boolean; disabled?: boolean }) {
+function SettingRow({ title, copy, value, onChange, onDetailsPress, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; copy: string; value: boolean; onChange: (value: boolean) => void; onDetailsPress?: () => void; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
+  if (locked) {
+    return <Button accessibilityHint={copy} accessibilityLabel={`${title}, Rancher`} className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(() => { void onLockedPress?.(); })}><View className="min-w-0 flex-1 pr-3"><DetailsTitle title={title} copy={copy} onDetailsPress={onDetailsPress} /></View><RancherBadge /><Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} /></Button>;
+  }
   return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}><View className="flex-1 pr-[18px]"><DetailsTitle title={title} copy={copy} onDetailsPress={onDetailsPress} /></View><Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
+}
+
+function RancherBadge() {
+  const { t } = useTranslation();
+  return <View className="rounded-full bg-primary/15 px-2 py-1"><Text className="text-[10px] font-semibold text-primary">{t('membership.rancher')}</Text></View>;
 }
 
 function ActionRow({ title, copy, icon, value, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean }) {

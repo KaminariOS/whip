@@ -8,7 +8,7 @@ import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from './operationalDiagnostics';
-import { isUnknownRecord } from '../lib/unknown';
+import { revenueCatPublicSdkKey } from '../billing/revenueCatConfiguration';
 
 export const TIP_PRODUCT_IDS = [
   'whip_tip_small',
@@ -27,13 +27,11 @@ export interface TipProduct {
 let initialization: Promise<boolean> | null = null;
 
 function publicSdkKey(): string | null {
-  const extra: unknown = Constants.expoConfig?.extra;
-  const value = Platform.select({
-    ios: isUnknownRecord(extra) ? extra.revenueCatIosPublicSdkKey : undefined,
-    android: isUnknownRecord(extra) ? extra.revenueCatAndroidPublicSdkKey : undefined,
-    default: null,
-  });
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+  return revenueCatPublicSdkKey(
+    Constants.expoConfig?.extra,
+    Platform.OS,
+    __DEV__,
+  );
 }
 
 export function initializeRevenueCat(): Promise<boolean> {
@@ -103,7 +101,7 @@ export async function purchaseTipProduct(
   }
 }
 
-function recordRevenueCatFailure(
+export function recordRevenueCatFailure(
   level: 'warn' | 'error',
   event: string,
   error: unknown,
@@ -113,7 +111,7 @@ function recordRevenueCatFailure(
   });
 }
 
-function isPurchaseCancellation(error: unknown): boolean {
+export function isPurchaseCancellation(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const purchasesError = error as Partial<PurchasesError>;
   return (

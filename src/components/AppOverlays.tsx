@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import type { DevicePreferencesController } from '../hooks/useDevicePreferences';
+import type { DevicePreferences } from '../services/devicePreferences';
 import type { HostManagementController } from '../hooks/useHostManagement';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { RemoteFilesController } from '../hooks/useRemoteFilesController';
@@ -25,7 +25,7 @@ import { RemoteFileManager } from './RemoteFileManager';
 import { TrustHostSheet } from './TrustHostSheet';
 
 interface AppOverlaysProps {
-  preferences: DevicePreferencesController;
+  effectivePreferences: DevicePreferences;
   hosts: HostManagementController;
   sessions: SessionRuntimeController;
   navigation: AppNavigationController;
@@ -35,7 +35,7 @@ interface AppOverlaysProps {
 
 /** App-wide modal flows. Domain state remains owned by the supplied controllers. */
 export function AppOverlays({
-  preferences,
+  effectivePreferences,
   hosts,
   sessions,
   navigation,
@@ -43,7 +43,7 @@ export function AppOverlays({
   security,
 }: AppOverlaysProps) {
   const { appBackgroundImageUri, appBackgroundDimming, biometricForKeys } =
-    preferences.value;
+    effectivePreferences;
   const activeSession = sessions.activeSession;
   const selectedPane =
     navigation.selectedPaneId && activeSession

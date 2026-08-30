@@ -57,6 +57,7 @@ fi
 
 export DEVELOPER_DIR="${WHIP_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export WHIP_DISTRIBUTION_CHANNEL="${WHIP_DISTRIBUTION_CHANNEL:-app-store}"
 unset SDKROOT
 
 # Nix's compiler wrappers are correct for Rust bridge generation but inject

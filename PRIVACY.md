@@ -22,6 +22,8 @@ On supported Android devices, Whip also stores AES-GCM-encrypted credential ciph
 
 Whip connects to SSH hosts configured by the user. Herdr state, terminal traffic, file transfers, and private-network browser tunnels travel through those SSH connections. Public links opened from a terminal or preview are handled by the device browser path. Tailscale, SSH hosts, operating-system services, Google Play, GitHub, Apple, and any other distribution or network provider have their own privacy practices outside this project's control.
 
+Optional tips and the one-time Rancher purchase use RevenueCat and the device's app store (or an explicitly configured web checkout for direct GitHub builds). RevenueCat receives an anonymous app user identifier plus store purchase and entitlement metadata needed to load products, complete purchases, and restore access. Whip does not send SSH credentials, terminal content, or background images to RevenueCat.
+
 Whip verifies every direct and jump-host key. A new fingerprint is stored only after the user accepts it, and a changed key is rejected. Independently compare first-use fingerprints to avoid trusting an impersonated host.
 
 ## Notifications, speech, and diagnostics

@@ -79,6 +79,7 @@ export interface DevicePreferences {
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
   developerOptionsEnabled: boolean;
+  rancherPaymentsEnabled: boolean;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -100,6 +101,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   appBackgroundDimming: 60,
   appGlassEnabled: false,
   developerOptionsEnabled: false,
+  rancherPaymentsEnabled: false,
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
@@ -257,6 +259,7 @@ function parseDevicePreferences(
       ),
       appGlassEnabled: parsed.appGlassEnabled === true,
       developerOptionsEnabled: parsed.developerOptionsEnabled === true,
+      rancherPaymentsEnabled: parsed.rancherPaymentsEnabled === true,
       language: isLanguagePreference(parsed.language)
         ? parsed.language
         : defaultDevicePreferences.language,
