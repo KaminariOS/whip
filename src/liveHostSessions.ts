@@ -79,6 +79,25 @@ export function createEmptyHerdrSnapshot(): HerdrSnapshot {
 }
 
 /**
+ * Captures runtime-backed snapshots while the AppCore view and runtime registry
+ * describe the same lifecycle instant. React may apply the render cache later.
+ */
+export function captureAppCoreHostSnapshots(
+  core: AppCoreProjection,
+  snapshotFromHostState: (
+    sessionId: string,
+    state: HostRuntimeState,
+  ) => HerdrSnapshot,
+): ReadonlyMap<string, HerdrSnapshot> {
+  return new Map(core.sessions.flatMap(session => session.hostState
+    ? [[
+        session.id,
+        snapshotFromHostState(session.id, session.hostState),
+      ] as const]
+    : []));
+}
+
+/**
  * Mechanical React render-cache projection. All session transitions and
  * selection repair have already happened in Rust AppCore.
  */
@@ -86,10 +105,7 @@ export function projectAppCoreSessions(
   core: AppCoreProjection,
   profiles: ReadonlyMap<string, HostProfile>,
   previous: LiveHostSessionsState,
-  snapshotFromHostState: (
-    sessionId: string,
-    state: HostRuntimeState,
-  ) => HerdrSnapshot,
+  hostSnapshots: ReadonlyMap<string, HerdrSnapshot>,
 ): LiveHostSessionsState {
   return {
     sessions: core.sessions.map(nativeSession => {
@@ -104,8 +120,13 @@ export function projectAppCoreSessions(
       }
       const nativeState = nativeSession.hostState;
       const snapshot = nativeState
-        ? snapshotFromHostState(nativeSession.id, nativeState)
+        ? hostSnapshots.get(nativeSession.id)
         : previousSession?.snapshot ?? createEmptyHerdrSnapshot();
+      if (!snapshot) {
+        throw new Error(
+          `Rust AppCore host state was not captured for ${nativeSession.id}`,
+        );
+      }
       return {
         id: nativeSession.id,
         hostId: nativeSession.hostId,

@@ -4,6 +4,7 @@ import type {
 } from 'react-native-whip-ssh';
 
 import {
+  captureAppCoreHostSnapshots,
   emptyLiveHostSessions,
   projectAppCoreSessions,
 } from '../src/liveHostSessions';
@@ -70,14 +71,19 @@ describe('Rust AppCore render projection', () => {
       layouts: [],
     };
 
-    const projected = projectAppCoreSessions(
-      coreView(),
-      new Map([[host.id, host]]),
-      emptyLiveHostSessions,
+    const view = coreView();
+    const snapshots = captureAppCoreHostSnapshots(
+      view,
       (_sessionId, state) => {
         expect(state).toBe(hostState);
         return snapshot;
       },
+    );
+    const projected = projectAppCoreSessions(
+      view,
+      new Map([[host.id, host]]),
+      emptyLiveHostSessions,
+      snapshots,
     );
 
     expect(projected).toEqual({
@@ -106,7 +112,55 @@ describe('Rust AppCore render projection', () => {
       coreView(),
       new Map(),
       emptyLiveHostSessions,
-      () => { throw new Error('unreachable'); },
+      new Map(),
     )).toThrow('Rust AppCore projected unknown host savior');
+  });
+
+  test('requires every projected host state to be captured at commit time', () => {
+    expect(() => projectAppCoreSessions(
+      coreView(),
+      new Map([[host.id, host]]),
+      emptyLiveHostSessions,
+      new Map(),
+    )).toThrow('Rust AppCore host state was not captured for live-1');
+  });
+
+  test('does not consult a removed runtime from a deferred React projection', () => {
+    const snapshot: HerdrSnapshot = {
+      server: { running: true },
+      focused_workspace_id: 'workspace-1',
+      focused_tab_id: 'tab-1',
+      focused_pane_id: 'pane-1',
+      agents: [],
+      workspaces: [],
+      tabs: [],
+      panes: [],
+      layouts: [],
+    };
+    const runtime = {
+      snapshotFromHostState: jest.fn((_state: HostRuntimeState) => snapshot),
+    };
+    const runtimes = new Map([['live-1', runtime]]);
+    const view = coreView();
+    const captured = captureAppCoreHostSnapshots(view, (sessionId, state) => {
+      const current = runtimes.get(sessionId);
+      if (!current) {
+        throw new Error(
+          `Rust AppCore projected host state without runtime ${sessionId}`,
+        );
+      }
+      return current.snapshotFromHostState(state);
+    });
+
+    runtimes.delete('live-1');
+    const projected = projectAppCoreSessions(
+      view,
+      new Map([[host.id, host]]),
+      emptyLiveHostSessions,
+      captured,
+    );
+
+    expect(runtime.snapshotFromHostState).toHaveBeenCalledTimes(1);
+    expect(projected.sessions[0].snapshot).toBe(snapshot);
   });
 });

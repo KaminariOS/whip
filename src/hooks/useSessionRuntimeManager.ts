@@ -28,6 +28,7 @@ import type {
   SessionRuntimeStore,
 } from './sessionRuntimeTypes';
 import {
+  captureAppCoreHostSnapshots,
   emptyLiveHostSessions,
   getActiveLiveHostSession,
   projectAppCoreSessions,
@@ -156,11 +157,8 @@ export function useSessionRuntimeManager({
   const projectTerminalAppCore = terminals.projectAppCore;
   const commitAppCore = useCallback<SessionRuntimeStore['commitAppCore']>(
     view => {
-      projectTerminalAppCore(view);
-      setState(current => projectAppCoreSessions(
+      const hostSnapshots = captureAppCoreHostSnapshots(
         view,
-        sessionProfilesRef.current,
-        current,
         (sessionId, hostState) => {
           const runtime = runtimesRef.current.get(sessionId);
           if (!runtime) {
@@ -170,6 +168,13 @@ export function useSessionRuntimeManager({
           }
           return runtime.client.snapshotFromHostState(hostState);
         },
+      );
+      projectTerminalAppCore(view);
+      setState(current => projectAppCoreSessions(
+        view,
+        sessionProfilesRef.current,
+        current,
+        hostSnapshots,
       ));
     },
     [projectTerminalAppCore],
