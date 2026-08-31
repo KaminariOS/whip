@@ -19,6 +19,34 @@ export interface HerdQueueAgent {
   primaryLabel: string;
 }
 
+export interface HerdProjectionRequest {
+  hostId: string | null;
+  workspaceId: string | null;
+}
+
+/**
+ * Resolves enough navigation intent to address a host-scoped workspace filter.
+ * Rust still validates these requests and owns the effective Herd projection.
+ */
+export function resolveHerdProjectionRequest(
+  sessionIds: readonly string[],
+  requestedHostId: string | null,
+  workspaceFilterIds: Readonly<Record<string, string | null>>,
+): HerdProjectionRequest {
+  const validRequestedHostId = requestedHostId && sessionIds.includes(requestedHostId)
+    ? requestedHostId
+    : null;
+  const effectiveHostId = validRequestedHostId
+    ?? (sessionIds.length === 1 ? sessionIds[0] : null);
+
+  return {
+    hostId: effectiveHostId,
+    workspaceId: effectiveHostId
+      ? workspaceFilterIds[effectiveHostId] ?? null
+      : null,
+  };
+}
+
 const AGENT_STATUS_SORT_PRIORITY: Record<AgentStatus, number> = {
   blocked: 0,
   done: 1,

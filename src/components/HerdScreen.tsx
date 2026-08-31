@@ -184,33 +184,6 @@ export function HerdScreen({
     }
   }, [onRefresh, pullRefreshing]);
 
-  useEffect(() => {
-    if (workspaceFilterId && !selectedWorkspaceId && selectedQueue) {
-      onWorkspaceFilterChange(selectedQueue.id, null);
-    }
-  }, [onWorkspaceFilterChange, selectedQueue, selectedWorkspaceId, workspaceFilterId]);
-
-  useEffect(() => {
-    if (queues.length !== 1 || !resolvedHostId || selectedHostId === resolvedHostId) return;
-    onSelectHost(resolvedHostId);
-  }, [onSelectHost, queues.length, resolvedHostId, selectedHostId]);
-
-  useEffect(() => {
-    if (
-      selectedQueue?.workspaces.length !== 1
-      || !selectedWorkspaceId
-      || workspaceFilterId === selectedWorkspaceId
-    ) return;
-    onWorkspaceFilterChange(selectedQueue.id, selectedWorkspaceId);
-    onSelectWorkspace(selectedQueue.id, selectedWorkspaceId);
-  }, [
-    onSelectWorkspace,
-    onWorkspaceFilterChange,
-    selectedQueue,
-    selectedWorkspaceId,
-    workspaceFilterId,
-  ]);
-
   const selectHost = (hostId: string | null) => {
     setWorkspaceEditorMode(null);
     setCommandRunnerOpen(false);

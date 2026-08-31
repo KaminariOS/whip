@@ -17,7 +17,10 @@ import { effectiveDevicePreferences } from '../billing/effectiveSettings';
 import { simulateDeveloperMembership } from '../billing/developerMembership';
 import { resolveAccessTier } from '../billing/tiers';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
-import type { HerdHostQueue } from '../herdQueue';
+import {
+  resolveHerdProjectionRequest,
+  type HerdHostQueue,
+} from '../herdQueue';
 import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
 import { shouldEnableAppGlass } from '../lib/appGlass';
 import { hostDisplayName } from '../lib/hostProfiles';
@@ -133,16 +136,11 @@ export function AppShell({
   const fullscreenVisible = immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
     : fullscreenApp;
-  const selectedHerdHostId =
-    navigation.herdHostFilterId &&
-    sessions.state.sessions.some(
-      session => session.id === navigation.herdHostFilterId,
-    )
-      ? navigation.herdHostFilterId
-      : null;
-  const selectedHerdWorkspaceId = selectedHerdHostId
-    ? navigation.herdWorkspaceFilterIds[selectedHerdHostId] ?? null
-    : null;
+  const herdProjectionRequest = resolveHerdProjectionRequest(
+    sessions.state.sessions.map(session => session.id),
+    navigation.herdHostFilterId,
+    navigation.herdWorkspaceFilterIds,
+  );
   const herdProjection = useMemo(
     () => sessions.herdView(
       sessions.state.sessions.map(session => ({
@@ -150,10 +148,10 @@ export function AppShell({
         hostLabel: hostDisplayName(session.host),
         address: session.host.host,
       })),
-      selectedHerdHostId ?? undefined,
-      selectedHerdWorkspaceId ?? undefined,
+      herdProjectionRequest.hostId ?? undefined,
+      herdProjectionRequest.workspaceId ?? undefined,
     ),
-    [selectedHerdHostId, selectedHerdWorkspaceId, sessions],
+    [herdProjectionRequest.hostId, herdProjectionRequest.workspaceId, sessions],
   );
   const railSessions: LiveSessionRailItem[] = sessions.state.sessions.map(
     session => ({
@@ -336,8 +334,8 @@ export function AppShell({
                           onCloseWorkspace={sessions.closeWorkspace}
                           onCloseTab={sessions.closeTab}
                           onRefresh={async () => {
-                            const ids = selectedHerdHostId
-                              ? [selectedHerdHostId]
+                            const ids = herdProjectionRequest.hostId
+                              ? [herdProjectionRequest.hostId]
                               : sessions.state.sessions.map(
                                   session => session.id,
                                 );

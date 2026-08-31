@@ -94,6 +94,20 @@ pub(super) fn project(
             .then(status_priority(left.agent_status).cmp(&status_priority(right.agent_status)))
     });
 
+    project_hosts(
+        state.revision,
+        hosts,
+        requested_host_id,
+        requested_workspace_id,
+    )
+}
+
+fn project_hosts(
+    revision: u64,
+    hosts: Vec<HerdHostView>,
+    requested_host_id: Option<String>,
+    requested_workspace_id: Option<String>,
+) -> HerdView {
     let selected_host_id = if hosts.len() == 1 {
         Some(hosts[0].id.clone())
     } else {
@@ -189,7 +203,7 @@ pub(super) fn project(
             })
     });
     HerdView {
-        revision: state.revision,
+        revision,
         selected_host_id,
         selected_workspace_id,
         hosts,
@@ -216,6 +230,135 @@ fn status_priority(status: HerdrAgentStatus) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn workspace(id: &str) -> HerdrWorkspaceInfo {
+        HerdrWorkspaceInfo {
+            workspace_id: id.to_owned(),
+            number: 1.0,
+            label: id.to_owned(),
+            focused: false,
+            pane_count: 1.0,
+            tab_count: 1.0,
+            active_tab_id: format!("{id}-tab"),
+            agent_status: HerdrAgentStatus::Idle,
+            tokens: None,
+            worktree: None,
+        }
+    }
+
+    fn tab(workspace_id: &str) -> HerdrTabInfo {
+        HerdrTabInfo {
+            tab_id: format!("{workspace_id}-tab"),
+            workspace_id: workspace_id.to_owned(),
+            number: 1.0,
+            label: format!("{workspace_id} tab"),
+            focused: false,
+            pane_count: 1.0,
+            agent_status: HerdrAgentStatus::Idle,
+        }
+    }
+
+    fn agent(workspace_id: &str) -> HerdrAgentInfo {
+        HerdrAgentInfo {
+            pane_id: format!("{workspace_id}-pane"),
+            terminal_id: format!("{workspace_id}-terminal"),
+            workspace_id: workspace_id.to_owned(),
+            tab_id: format!("{workspace_id}-tab"),
+            focused: false,
+            agent_status: HerdrAgentStatus::Idle,
+            revision: 1.0,
+            cwd: None,
+            foreground_cwd: None,
+            agent: Some("codex".to_owned()),
+            name: None,
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            display_agent: None,
+            interactive_ready: None,
+            launch_pending: None,
+            screen_detection_skipped: None,
+            state_change_seq: None,
+            state_labels: None,
+            tokens: None,
+            agent_session: None,
+        }
+    }
+
+    fn host(id: &str, workspace_ids: &[&str]) -> HerdHostView {
+        HerdHostView {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            address: format!("{id}.example.test"),
+            connected: true,
+            running: true,
+            refreshing: false,
+            agent_status: HerdrAgentStatus::Idle,
+            agents: workspace_ids.iter().map(|id| agent(id)).collect(),
+            workspaces: workspace_ids.iter().map(|id| workspace(id)).collect(),
+            tabs: workspace_ids.iter().map(|id| tab(id)).collect(),
+        }
+    }
+
+    fn projected_agent_workspaces(view: &HerdView) -> Vec<&str> {
+        view.agents
+            .iter()
+            .map(|agent| agent.agent.workspace_id.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn single_host_workspace_request_selects_and_filters() {
+        let view = project_hosts(
+            7,
+            vec![host("host-1", &["space-a", "space-b"])],
+            Some("host-1".to_owned()),
+            Some("space-b".to_owned()),
+        );
+
+        assert_eq!(view.selected_host_id.as_deref(), Some("host-1"));
+        assert_eq!(view.selected_workspace_id.as_deref(), Some("space-b"));
+        assert_eq!(projected_agent_workspaces(&view), ["space-b"]);
+    }
+
+    #[test]
+    fn single_workspace_is_auto_selected_without_a_workspace_request() {
+        let view = project_hosts(7, vec![host("host-1", &["only-space"])], None, None);
+
+        assert_eq!(view.selected_host_id.as_deref(), Some("host-1"));
+        assert_eq!(view.selected_workspace_id.as_deref(), Some("only-space"));
+        assert_eq!(projected_agent_workspaces(&view), ["only-space"]);
+    }
+
+    #[test]
+    fn workspace_request_is_validated_against_the_selected_host() {
+        let view = project_hosts(
+            7,
+            vec![
+                host("host-1", &["space-a", "space-b"]),
+                host("host-2", &["space-c", "space-d"]),
+            ],
+            Some("host-2".to_owned()),
+            Some("space-b".to_owned()),
+        );
+
+        assert_eq!(view.selected_host_id.as_deref(), Some("host-2"));
+        assert_eq!(view.selected_workspace_id, None);
+        assert_eq!(projected_agent_workspaces(&view), ["space-c", "space-d"]);
+    }
+
+    #[test]
+    fn no_workspace_request_projects_all_agents_for_the_selected_host() {
+        let view = project_hosts(
+            7,
+            vec![host("host-1", &["space-a", "space-b"])],
+            Some("host-1".to_owned()),
+            None,
+        );
+
+        assert_eq!(view.selected_workspace_id, None);
+        assert_eq!(projected_agent_workspaces(&view), ["space-a", "space-b"]);
+    }
 
     #[test]
     fn status_order_is_blocked_done_working_idle_unknown() {

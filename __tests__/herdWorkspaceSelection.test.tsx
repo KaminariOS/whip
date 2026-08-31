@@ -213,6 +213,34 @@ describe('Herd workspace selection intent', () => {
     });
   });
 
+  test('All Spaces only clears the local workspace filter', () => {
+    const onWorkspaceFilterChange = jest.fn();
+    const onSelectWorkspace = jest.fn();
+    const onFocusWorkspace = jest.fn().mockResolvedValue(undefined);
+    const onOpenTerminal = jest.fn();
+    const onOpenSpace = jest.fn();
+    act(() => {
+      renderer = create(<HerdScreen {...props({
+        onWorkspaceFilterChange,
+        onSelectWorkspace,
+        onFocusWorkspace,
+        onOpenTerminal,
+        onOpenSpace,
+      })} />);
+    });
+
+    act(() => {
+      findHost(renderer.root, 'WorkspaceRail').props.onSelect(null);
+    });
+
+    expect(onWorkspaceFilterChange).toHaveBeenCalledTimes(1);
+    expect(onWorkspaceFilterChange).toHaveBeenCalledWith('host-1', null);
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+    expect(onFocusWorkspace).not.toHaveBeenCalled();
+    expect(onOpenTerminal).not.toHaveBeenCalled();
+    expect(onOpenSpace).not.toHaveBeenCalled();
+  });
+
   test('accepts the Rust-projected single-workspace selection without echoing it', () => {
     const onSelectWorkspace = jest.fn();
     const onFocusWorkspace = jest.fn().mockResolvedValue(undefined);
@@ -239,9 +267,11 @@ describe('Herd workspace selection intent', () => {
       renderer = create(<HerdScreen {...initial} />);
     });
     act(() => {
-      renderer.update(<HerdScreen {...initial} queues={[
-        queue([workspace('space-a'), workspace('space-b', true)]),
-      ]} />);
+      renderer.update(<HerdScreen
+        {...initial}
+        queues={[queue([workspace('space-a'), workspace('space-b', true)])]}
+        workspaceFilterId="space-b"
+      />);
     });
 
     expect(onFocusWorkspace).not.toHaveBeenCalled();
