@@ -1284,6 +1284,18 @@ impl CodexSessionCore {
         self.status_update()
     }
 
+    pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
+        if self.cached_lines.is_empty() {
+            self.status = AgentTranscriptStatus::Loading;
+            self.error = None;
+        } else {
+            self.status = AgentTranscriptStatus::Stale;
+            self.error = Some(reason.into());
+        }
+        self.bump_revision();
+        self.status_update()
+    }
+
     pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
         self.mark_unavailable_update(error);
         self.state()
@@ -2383,5 +2395,17 @@ mod tests {
         assert_eq!(state.status, AgentTranscriptStatus::Unavailable);
         assert!(state.messages.is_empty());
         assert_eq!(state.error.as_deref(), Some("rollout not created"));
+    }
+
+    #[test]
+    fn retry_without_cached_history_returns_to_loading() {
+        let mut core = CodexSessionCore::new("thread");
+        core.mark_unavailable("rollout not created");
+
+        core.mark_restarting_update("Opening Codex transcript");
+
+        let state = core.state();
+        assert_eq!(state.status, AgentTranscriptStatus::Loading);
+        assert_eq!(state.error, None);
     }
 }

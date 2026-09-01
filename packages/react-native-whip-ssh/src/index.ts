@@ -140,6 +140,10 @@ const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>(
 const agentTranscriptHandlers = new Map<string, Map<string, (event: NativeAgentTranscriptUpdate) => void>>();
 const runtimeSshShellHandlers = new Map<string, Map<string, RuntimeSshShellHandler>>();
 
+function transcriptRoutingKey(runtimeId: string, runtimeIncarnation: number): string {
+  return `${runtimeId}\n${runtimeIncarnation}`;
+}
+
 function runtimeConnectionState(state: HostConnectionState): RuntimeConnectionState {
   switch (state) {
     case HostConnectionState.Disconnected: return 'disconnected';
@@ -259,6 +263,7 @@ export type NativeAgentTranscriptDelta =
   | { type: 'status-changed'; status: NativeAgentTranscriptState['status']; error?: string };
 
 export type NativeAgentTranscriptUpdate = {
+  runtimeIncarnation: number;
   key: string;
   revision: number;
   deltas: NativeAgentTranscriptDelta[];
@@ -1210,6 +1215,7 @@ function nativeAgentDelta(delta: AgentTranscriptDelta): NativeAgentTranscriptDel
 
 function nativeAgentUpdate(event: AgentTranscriptEvent): NativeAgentTranscriptUpdate {
   return {
+    runtimeIncarnation: Number(event.runtimeIncarnation),
     key: event.key,
     revision: Number(event.update.revision),
     deltas: event.update.deltas.map(nativeAgentDelta),
@@ -1890,7 +1896,10 @@ const hostRuntimeEventSink = {
 
 const agentTranscriptEventSink = {
   event(event: AgentTranscriptEvent): void {
-    const handlers = agentTranscriptHandlers.get(event.runtimeId);
+    const handlers = agentTranscriptHandlers.get(transcriptRoutingKey(
+      event.runtimeId,
+      Number(event.runtimeIncarnation),
+    ));
     const handler = handlers?.get(event.key);
     handler?.(nativeAgentUpdate(event));
     const closed = event.update.deltas.some(delta => (
@@ -1907,12 +1916,21 @@ setAgentTranscriptEventSink(agentTranscriptEventSink);
 
 export class NativeHostRuntime {
   readonly runtimeId: string;
+  readonly runtimeIncarnation: number;
+  private readonly transcriptRoute: string;
 
   constructor(
     private readonly runtime: HostRuntimeLike,
     lifecycleHandler?: (event: RuntimeLifecycleEvent) => void,
   ) {
     this.runtimeId = runtime.runtimeId();
+    this.runtimeIncarnation = typeof runtime.runtimeIncarnation === 'function'
+      ? Number(runtime.runtimeIncarnation())
+      : 0;
+    this.transcriptRoute = transcriptRoutingKey(
+      this.runtimeId,
+      this.runtimeIncarnation,
+    );
     if (lifecycleHandler) runtimeHandlers.set(this.runtimeId, lifecycleHandler);
   }
 
@@ -2001,7 +2019,7 @@ export class NativeHostRuntime {
 
   async disconnect(): Promise<void> {
     runtimeHandlers.delete(this.runtimeId);
-    agentTranscriptHandlers.delete(this.runtimeId);
+    agentTranscriptHandlers.delete(this.transcriptRoute);
     runtimeSshShellHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
     await this.runtime.disconnect();
@@ -2030,7 +2048,7 @@ export class NativeHostRuntime {
     sessionId: string,
     cacheBlob?: ArrayBuffer,
     handler?: (event: NativeAgentTranscriptUpdate) => void,
-  ): { key: string; state: NativeAgentTranscriptState } {
+  ): { runtimeIncarnation: number; key: string; state: NativeAgentTranscriptState } {
     const result = this.runtime.openAgentSession(
       agentKind === 'opencode' ? AgentTranscriptKind.OpenCode : AgentTranscriptKind.Codex,
       terminalId,
@@ -2038,14 +2056,20 @@ export class NativeHostRuntime {
       cacheBlob,
     );
     if (handler) {
-      let handlers = agentTranscriptHandlers.get(this.runtimeId);
+      let handlers = agentTranscriptHandlers.get(this.transcriptRoute);
       if (!handlers) {
         handlers = new Map();
-        agentTranscriptHandlers.set(this.runtimeId, handlers);
+        agentTranscriptHandlers.set(this.transcriptRoute, handlers);
       }
       handlers.set(result.key, handler);
     }
-    return { key: result.key, state: nativeAgentTranscript(result.state) };
+    return {
+      runtimeIncarnation: Number(
+        result.runtimeIncarnation ?? this.runtimeIncarnation,
+      ),
+      key: result.key,
+      state: nativeAgentTranscript(result.state),
+    };
   }
 
   bindAgentSession(
@@ -2053,21 +2077,27 @@ export class NativeHostRuntime {
     terminalId: string,
     sessionId: string,
     handler?: (event: NativeAgentTranscriptUpdate) => void,
-  ): { key: string; state: NativeAgentTranscriptState } {
+  ): { runtimeIncarnation: number; key: string; state: NativeAgentTranscriptState } {
     const result = this.runtime.bindAgentSession(
       agentKind === 'opencode' ? AgentTranscriptKind.OpenCode : AgentTranscriptKind.Codex,
       terminalId,
       sessionId,
     );
     if (handler) {
-      let handlers = agentTranscriptHandlers.get(this.runtimeId);
+      let handlers = agentTranscriptHandlers.get(this.transcriptRoute);
       if (!handlers) {
         handlers = new Map();
-        agentTranscriptHandlers.set(this.runtimeId, handlers);
+        agentTranscriptHandlers.set(this.transcriptRoute, handlers);
       }
       handlers.set(result.key, handler);
     }
-    return { key: result.key, state: nativeAgentTranscript(result.state) };
+    return {
+      runtimeIncarnation: Number(
+        result.runtimeIncarnation ?? this.runtimeIncarnation,
+      ),
+      key: result.key,
+      state: nativeAgentTranscript(result.state),
+    };
   }
 
   startAgentSession(
@@ -2083,13 +2113,13 @@ export class NativeHostRuntime {
   }
 
   closeAgentSession(key: string): void {
-    agentTranscriptHandlers.get(this.runtimeId)?.delete(key);
+    agentTranscriptHandlers.get(this.transcriptRoute)?.delete(key);
     this.runtime.closeAgentSession(key);
   }
 
   closeAgentTerminal(terminalId: string): string | undefined {
     const released = this.runtime.closeAgentTerminal(terminalId);
-    if (released) agentTranscriptHandlers.get(this.runtimeId)?.delete(released);
+    if (released) agentTranscriptHandlers.get(this.transcriptRoute)?.delete(released);
     return released;
   }
 

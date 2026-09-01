@@ -63,3 +63,16 @@ test('keeps normalized native tool fields typed through the presentation boundar
   });
   expect(state.transcript.turns[0].assistants[0]).toBe(native.messages[0]);
 });
+
+test('preserves a closed native transcript as a recoverable terminal state', () => {
+  const native: NativeAgentTranscriptState = {
+    sessionId: 'session-closed',
+    agent: 'codex',
+    revision: 2,
+    status: 'closed',
+    messages: [],
+    turns: [],
+  };
+
+  expect(agentChatStateFromNative(native).status).toBe('closed');
+});

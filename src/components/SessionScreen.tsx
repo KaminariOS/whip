@@ -1213,7 +1213,10 @@ export function SessionScreen({
       pendingChatOpenTerminalIdRef.current === terminalId ||
       (activeChatView && chatPresentationRequested(activeChatView.presentation))
     ) return;
-    if (activeChatView) {
+    if (
+      activeChatView &&
+      agentTranscriptReadiness(activeChatView.state) !== 'failed'
+    ) {
       const generation = nextChatPresentationGeneration();
       setChatViews(current => {
         const view = current.get(terminalId);

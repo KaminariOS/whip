@@ -535,8 +535,13 @@ describe('native HostRuntime adapter', () => {
     };
     const rustRuntime = {
       runtimeId: jest.fn(() => 'runtime-agent'),
-      openAgentSession: jest.fn(() => ({ key: 'codex:session-1', state: nativeState })),
-      bindAgentSession: jest.fn(() => ({ key: 'codex:session-1', state: nativeState })),
+      runtimeIncarnation: jest.fn(() => 7n),
+      openAgentSession: jest.fn(() => ({
+        runtimeIncarnation: 7n, key: 'codex:session-1', state: nativeState,
+      })),
+      bindAgentSession: jest.fn(() => ({
+        runtimeIncarnation: 7n, key: 'codex:session-1', state: nativeState,
+      })),
       startAgentSession: jest.fn(() => nativeState),
       agentTranscript: jest.fn(() => nativeState),
       closeAgentSession: jest.fn(),
@@ -577,9 +582,10 @@ describe('native HostRuntime adapter', () => {
         ],
       })],
     }));
+    expect(result.runtimeIncarnation).toBe(7);
     expect(started).toEqual(expect.objectContaining({ revision: 4, status: 'live' }));
     mockAgentEventSink.event({
-      runtimeId: 'runtime-agent', key: 'codex:session-1',
+      runtimeId: 'runtime-agent', runtimeIncarnation: 7n, key: 'codex:session-1',
       update: { revision: 4n, deltas: [{ tag: 'Reset', inner: { state: nativeState } }] },
       cacheWrite: {
         namespace: 'runtime-agent', key: 'cache', blob: new Uint8Array([1, 2]).buffer,
@@ -594,16 +600,80 @@ describe('native HostRuntime adapter', () => {
     }));
     handler.mockClear();
     mockAgentEventSink.event({
-      runtimeId: 'runtime-agent', key: 'codex:session-1', cacheWrite: undefined,
+      runtimeId: 'runtime-agent', runtimeIncarnation: 7n,
+      key: 'codex:session-1', cacheWrite: undefined,
       update: {
         revision: 5n,
         deltas: [{ tag: 'StatusChanged', inner: { status: 5, error: undefined } }],
       },
     });
     mockAgentEventSink.event({
-      runtimeId: 'runtime-agent', key: 'codex:session-1', cacheWrite: undefined,
+      runtimeId: 'runtime-agent', runtimeIncarnation: 7n,
+      key: 'codex:session-1', cacheWrite: undefined,
       update: { revision: 6n, deltas: [] },
     });
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes transcript events by native runtime incarnation', async () => {
+    const nativeState = {
+      sessionId: 'session-1', agent: 0, revision: 1n, status: 1,
+      messages: [], turns: [],
+    };
+    const rustRuntime = (runtimeIncarnation: bigint) => ({
+      runtimeId: jest.fn(() => 'runtime-agent-reused'),
+      runtimeIncarnation: jest.fn(() => runtimeIncarnation),
+      bindAgentSession: jest.fn(() => ({
+        runtimeIncarnation,
+        key: 'codex:session-1',
+        state: nativeState,
+      })),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+    });
+    const config = {
+      runtimeId: 'runtime-agent-reused',
+      ssh: {
+        host: 'host.test', port: 22, username: 'me', authMode: 'password' as const, secret: 'secret',
+      },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    };
+    const oldNative = rustRuntime(11n);
+    const replacementNative = rustRuntime(12n);
+    mockGenerated.createHostRuntime
+      .mockReturnValueOnce(oldNative)
+      .mockReturnValueOnce(replacementNative);
+    const oldRuntime = createHostRuntime(config);
+    const replacementRuntime = createHostRuntime(config);
+    const oldHandler = jest.fn();
+    const replacementHandler = jest.fn();
+    oldRuntime.bindAgentSession('codex', 'terminal-1', 'session-1', oldHandler);
+    replacementRuntime.bindAgentSession(
+      'codex',
+      'terminal-1',
+      'session-1',
+      replacementHandler,
+    );
+
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent-reused', runtimeIncarnation: 11n,
+      key: 'codex:session-1', cacheWrite: undefined,
+      update: { revision: 2n, deltas: [] },
+    });
+    expect(oldHandler).toHaveBeenCalledTimes(1);
+    expect(replacementHandler).not.toHaveBeenCalled();
+
+    await oldRuntime.disconnect();
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent-reused', runtimeIncarnation: 11n,
+      key: 'codex:session-1', cacheWrite: undefined,
+      update: { revision: 3n, deltas: [] },
+    });
+    mockAgentEventSink.event({
+      runtimeId: 'runtime-agent-reused', runtimeIncarnation: 12n,
+      key: 'codex:session-1', cacheWrite: undefined,
+      update: { revision: 2n, deltas: [] },
+    });
+    expect(oldHandler).toHaveBeenCalledTimes(1);
+    expect(replacementHandler).toHaveBeenCalledTimes(1);
   });
 });

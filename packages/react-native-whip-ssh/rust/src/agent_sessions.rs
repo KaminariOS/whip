@@ -42,6 +42,7 @@ pub struct AgentTranscriptCacheWrite {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AgentTranscriptEvent {
     pub runtime_id: String,
+    pub runtime_incarnation: u64,
     pub key: String,
     pub update: AgentTranscriptUpdate,
     pub cache_write: Option<AgentTranscriptCacheWrite>,
@@ -49,6 +50,7 @@ pub struct AgentTranscriptEvent {
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AgentSessionOpenResult {
+    pub runtime_incarnation: u64,
     pub key: String,
     pub state: AgentTranscriptState,
 }
@@ -138,6 +140,14 @@ impl AgentSessionCore {
         }
     }
 
+    fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
+        let reason = reason.into();
+        match self {
+            Self::Codex(core) => core.mark_restarting_update(reason),
+            Self::OpenCode(core) => core.mark_restarting_update(reason),
+        }
+    }
+
     fn mark_unavailable_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
         let reason = reason.into();
         match self {
@@ -187,6 +197,7 @@ struct ManagerState {
 
 struct AgentSessionManagerInner {
     runtime_id: String,
+    runtime_incarnation: u64,
     connection: Arc<HerdrConnection>,
     state: Mutex<ManagerState>,
 }
@@ -205,10 +216,15 @@ struct StreamContext {
 }
 
 impl AgentSessionManager {
-    pub(crate) fn new(runtime_id: String, connection: Arc<HerdrConnection>) -> Self {
+    pub(crate) fn new(
+        runtime_id: String,
+        runtime_incarnation: u64,
+        connection: Arc<HerdrConnection>,
+    ) -> Self {
         Self {
             inner: Arc::new(AgentSessionManagerInner {
                 runtime_id,
+                runtime_incarnation,
                 connection,
                 state: Mutex::new(ManagerState {
                     connected: false,
@@ -524,7 +540,7 @@ impl AgentSessionManager {
             if let AgentSessionCore::OpenCode(core) = &mut session.core {
                 core.begin_sync_generation();
             }
-            let update = session.core.mark_stale_update(reason);
+            let update = session.core.mark_restarting_update(reason);
             let operation = (
                 session.operation_epoch,
                 session.session_id.clone(),
@@ -1011,6 +1027,7 @@ fn emit(
     if let Some(sink) = sink {
         sink.event(AgentTranscriptEvent {
             runtime_id: manager.runtime_id.clone(),
+            runtime_incarnation: manager.runtime_incarnation,
             key,
             update,
             cache_write,
@@ -1361,6 +1378,7 @@ mod tests {
     fn test_manager(runtime_id: &str) -> AgentSessionManager {
         AgentSessionManager::new(
             runtime_id.to_owned(),
+            1,
             HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
         )
     }

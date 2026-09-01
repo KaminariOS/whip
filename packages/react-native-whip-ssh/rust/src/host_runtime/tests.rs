@@ -101,9 +101,10 @@ fn runtime_inner_with_state(
     );
     Arc::new(RuntimeInner {
         id: id.to_owned(),
+        incarnation: 1,
         config: runtime_config,
         state: Mutex::new(state),
-        agents: AgentSessionManager::new(id.to_owned(), herdr.clone()),
+        agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
@@ -915,6 +916,26 @@ fn lifecycle_connect_install_disconnect_is_explicit() {
     state.disconnect();
     assert_eq!(state.connection, HostConnectionState::Disconnecting);
     assert!(state.explicit_disconnect);
+}
+
+#[test]
+fn stale_runtime_cleanup_preserves_replacement_registration() {
+    let old = runtime_inner_with_state("reused-runtime-id", config(), RuntimeState::new(&config()));
+    let replacement =
+        runtime_inner_with_state("reused-runtime-id", config(), RuntimeState::new(&config()));
+    runtimes()
+        .write()
+        .insert(replacement.id.clone(), Arc::downgrade(&replacement));
+
+    unregister_runtime(&old);
+
+    let registered = runtimes()
+        .read()
+        .get(&replacement.id)
+        .and_then(Weak::upgrade)
+        .expect("replacement runtime should remain registered");
+    assert!(Arc::ptr_eq(&registered, &replacement));
+    unregister_runtime(&replacement);
 }
 
 #[test]

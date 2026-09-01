@@ -290,14 +290,22 @@ impl HostRuntime {
                     self.inner
                         .agents
                         .open_codex(terminal_id, session_id, cache_blob)?;
-                Ok(AgentSessionOpenResult { key, state })
+                Ok(AgentSessionOpenResult {
+                    runtime_incarnation: self.inner.incarnation,
+                    key,
+                    state,
+                })
             }
             AgentTranscriptKind::OpenCode => {
                 let (key, state) =
                     self.inner
                         .agents
                         .open_opencode(terminal_id, session_id, cache_blob)?;
-                Ok(AgentSessionOpenResult { key, state })
+                Ok(AgentSessionOpenResult {
+                    runtime_incarnation: self.inner.incarnation,
+                    key,
+                    state,
+                })
             }
         }
     }
@@ -314,7 +322,11 @@ impl HostRuntime {
                 self.inner.agents.bind_opencode(terminal_id, session_id)?
             }
         };
-        Ok(AgentSessionOpenResult { key, state })
+        Ok(AgentSessionOpenResult {
+            runtime_incarnation: self.inner.incarnation,
+            key,
+            state,
+        })
     }
 
     pub fn start_agent_session(

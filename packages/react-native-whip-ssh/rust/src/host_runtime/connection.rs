@@ -1185,7 +1185,7 @@ impl HostRuntime {
                     let mut state = inner.state.lock();
                     if state.connection == HostConnectionState::Disconnected {
                         drop(state);
-                        runtimes().write().remove(&inner.id);
+                        unregister_runtime(&inner);
                         return Ok(());
                     }
                     let epoch = state.disconnect();
@@ -1212,7 +1212,7 @@ impl HostRuntime {
                 }
                 publish_lifecycle_status(&inner);
                 emit_host_state(&inner);
-                runtimes().write().remove(&inner.id);
+                unregister_runtime(&inner);
                 Ok(())
             })
             .await

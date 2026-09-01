@@ -36,7 +36,8 @@ export type AgentChatConnectionStatus =
   | 'live'
   | 'stale'
   | 'unavailable'
-  | 'error';
+  | 'error'
+  | 'closed';
 
 export interface AgentChatState {
   sessionId: string;

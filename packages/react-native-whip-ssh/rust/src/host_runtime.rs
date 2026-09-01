@@ -51,11 +51,23 @@ const SLOW_RUNTIME_DIAGNOSTIC_MS: f64 = 200.0;
 const MIN_TERMINAL_COLUMNS: u32 = 20;
 const MIN_TERMINAL_ROWS: u32 = 8;
 static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_RUNTIME_INCARNATION: AtomicU64 = AtomicU64::new(1);
 static RUNTIMES: OnceLock<RwLock<HashMap<String, Weak<RuntimeInner>>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn HostRuntimeEventSink>>>> = OnceLock::new();
 
 fn runtimes() -> &'static RwLock<HashMap<String, Weak<RuntimeInner>>> {
     RUNTIMES.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn unregister_runtime(inner: &Arc<RuntimeInner>) {
+    let mut registered = runtimes().write();
+    let owns_registration = registered
+        .get(&inner.id)
+        .and_then(Weak::upgrade)
+        .is_some_and(|runtime| Arc::ptr_eq(&runtime, inner));
+    if owns_registration {
+        registered.remove(&inner.id);
+    }
 }
 
 fn event_sink() -> &'static RwLock<Option<Arc<dyn HostRuntimeEventSink>>> {
@@ -518,6 +530,7 @@ impl RuntimeState {
 
 struct RuntimeInner {
     id: String,
+    incarnation: u64,
     config: HostRuntimeConfig,
     state: Mutex<RuntimeState>,
     herdr: Arc<HerdrConnection>,
@@ -608,6 +621,7 @@ pub fn create_host_runtime(
         )));
     }
     let state = RuntimeState::new(&config);
+    let incarnation = NEXT_RUNTIME_INCARNATION.fetch_add(1, Ordering::Relaxed);
     let (cancellation, _) = watch::channel(0);
     let (status_tx, _) = watch::channel(state.status());
     let herdr = HerdrConnection::new(
@@ -618,8 +632,9 @@ pub fn create_host_runtime(
     );
     let inner = Arc::new(RuntimeInner {
         id: id.clone(),
+        incarnation,
         state: Mutex::new(state),
-        agents: AgentSessionManager::new(id.clone(), herdr.clone()),
+        agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
@@ -643,6 +658,10 @@ impl HostRuntime {
         self.inner.id.clone()
     }
 
+    pub fn runtime_incarnation(&self) -> u64 {
+        self.inner.incarnation
+    }
+
     pub fn status(&self) -> HostRuntimeStatus {
         self.inner.status_tx.borrow().clone()
     }
@@ -659,7 +678,7 @@ impl HostRuntime {
 impl Drop for HostRuntime {
     fn drop(&mut self) {
         let inner = self.inner.clone();
-        runtimes().write().remove(&inner.id);
+        unregister_runtime(&inner);
         let (epoch, generation) = {
             let mut state = inner.state.lock();
             let generation = state.generation;

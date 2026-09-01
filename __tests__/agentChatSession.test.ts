@@ -168,7 +168,7 @@ describe('initial Chat presentation lifecycle', () => {
     expect(chatPresentationLoading(visible)).toBe(false);
   });
 
-  test('a retryable loading error keeps spinning without showing a failure', () => {
+  test('a loading failure exits the busy state while native recovery continues', () => {
     const loading = requestChatPresentation(
       dormantChatPresentation(),
       'loading',
@@ -176,8 +176,8 @@ describe('initial Chat presentation lifecycle', () => {
     );
     const retrying = updateChatTranscriptReadiness(loading, 'failed', 6);
 
-    expect(retrying).toBe(loading);
-    expect(chatPresentationLoading(retrying)).toBe(true);
+    expect(retrying.phase).toBe(AgentChatPresentationPhase.Failed);
+    expect(chatPresentationLoading(retrying)).toBe(false);
     expect(chatPresentationVisible(retrying)).toBe(false);
     expect(chatPresentationMountsViewport(retrying)).toBe(false);
   });
@@ -190,7 +190,7 @@ describe('initial Chat presentation lifecycle', () => {
     );
     const recovered = updateChatTranscriptReadiness(retrying, 'usable', 7);
 
-    expect(retrying.phase).toBe(AgentChatPresentationPhase.LoadingTranscript);
+    expect(retrying.phase).toBe(AgentChatPresentationPhase.Failed);
     expect(recovered.phase).toBe(AgentChatPresentationPhase.PreparingViewport);
     expect(chatPresentationLoading(recovered)).toBe(true);
   });

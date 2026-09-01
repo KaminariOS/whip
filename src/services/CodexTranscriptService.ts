@@ -18,6 +18,12 @@ export type NativeTranscriptTransport = Pick<
 
 type Listener = (state: AgentChatState) => void;
 
+function activatingState(state: AgentChatState): AgentChatState {
+  return state.status === 'unavailable' || state.status === 'error'
+    ? { ...state, status: 'loading', error: undefined }
+    : state;
+}
+
 export type AgentTranscriptReadiness = 'loading' | 'usable' | 'failed';
 
 export function agentTranscriptReadiness(
@@ -30,6 +36,7 @@ export function agentTranscriptReadiness(
 
 interface TranscriptEntry {
   nativeKey: string;
+  runtimeIncarnation: number;
   hostSessionId: string;
   sessionId: string;
   transport: NativeTranscriptTransport;
@@ -58,39 +65,55 @@ export class NativeTranscriptService {
       this.agent,
       terminalId,
       sessionId,
-      event => boundEntry && this.acceptEvent(boundEntry, event),
+      event => {
+        if (event.runtimeIncarnation === boundEntry?.runtimeIncarnation) {
+          this.acceptEvent(boundEntry, event);
+        }
+      },
     );
     const key = result.key;
+    const boundState = agentChatStateFromNative(result.state);
+    const activationState = activatingState(boundState);
+    const retrying = activationState !== boundState;
     let entry = this.entries.get(key);
     if (!entry) {
       entry = {
         nativeKey: result.key,
+        runtimeIncarnation: result.runtimeIncarnation,
         hostSessionId,
         sessionId,
         transport,
         listeners: new Set(),
-        state: agentChatStateFromNative(result.state),
+        state: activationState,
         persistChain: Promise.resolve(),
       };
       this.entries.set(key, entry);
       boundEntry = entry;
-      this.restoreAndStart(entry, terminalId);
+      this.restoreAndStart(entry, terminalId, result.runtimeIncarnation);
     } else {
       const previousRevision = entry.state.revision ?? -1;
-      const nativeLifecycleReset = result.state.revision < previousRevision;
+      const nativeLifecycleReset =
+        result.runtimeIncarnation !== entry.runtimeIncarnation ||
+        result.state.revision < previousRevision;
       entry.transport = transport;
+      entry.runtimeIncarnation = result.runtimeIncarnation;
       entry.hostSessionId = hostSessionId;
       entry.sessionId = sessionId;
       boundEntry = entry;
-      if (nativeLifecycleReset) {
-        this.publish(entry, agentChatStateFromNative(result.state));
+      if (nativeLifecycleReset || retrying) {
+        this.publish(entry, activationState);
       } else {
         this.acceptState(entry, result.state);
       }
       if (nativeLifecycleReset && result.state.status === 'loading') {
-        this.restoreAndStart(entry, terminalId);
+        this.restoreAndStart(entry, terminalId, result.runtimeIncarnation);
       } else {
-        this.startNative(entry, terminalId, undefined);
+        this.startNative(
+          entry,
+          terminalId,
+          undefined,
+          result.runtimeIncarnation,
+        );
       }
     }
     return key;
@@ -127,16 +150,26 @@ export class NativeTranscriptService {
     this.entries.clear();
   }
 
-  private restoreAndStart(entry: TranscriptEntry, terminalId: string): void {
+  private restoreAndStart(
+    entry: TranscriptEntry,
+    terminalId: string,
+    runtimeIncarnation: number,
+  ): void {
     this.cache.loadNative(entry.nativeKey).then(blob => {
-      this.startNative(entry, terminalId, blob || undefined);
-    }).catch(error => {
-      this.publish(entry, { ...entry.state, status: 'error', error: String(error) });
-      this.startNative(entry, terminalId, undefined);
+      this.startNative(entry, terminalId, blob || undefined, runtimeIncarnation);
+    }).catch(() => {
+      if (entry.runtimeIncarnation !== runtimeIncarnation) return;
+      this.startNative(entry, terminalId, undefined, runtimeIncarnation);
     });
   }
 
-  private startNative(entry: TranscriptEntry, terminalId: string, cacheBlob: ArrayBuffer | undefined): void {
+  private startNative(
+    entry: TranscriptEntry,
+    terminalId: string,
+    cacheBlob: ArrayBuffer | undefined,
+    runtimeIncarnation: number,
+  ): void {
+    if (entry.runtimeIncarnation !== runtimeIncarnation) return;
     try {
       const state = entry.transport.startAgentSession(
         terminalId,

@@ -43,7 +43,7 @@ export function agentChatStateFromNative(value: NativeAgentTranscriptState): Age
     sessionId: value.sessionId,
     transcript,
     revision: value.revision,
-    status: value.status === 'closed' ? 'unavailable' : value.status,
+    status: value.status,
     error: value.error,
   };
   nativeMessageIndexes.set(state, byId);
@@ -63,7 +63,7 @@ export function applyNativeAgentTranscriptUpdate(
     next.revision = update.revision;
     for (const delta of update.deltas) {
       if (delta.type === 'status-changed') {
-        next.status = delta.status === 'closed' ? 'unavailable' : delta.status;
+        next.status = delta.status;
         next.error = delta.error;
       }
     }
@@ -141,7 +141,7 @@ export function applyNativeAgentTranscriptUpdate(
         break;
       }
       case 'status-changed':
-        status = delta.status === 'closed' ? 'unavailable' : delta.status;
+        status = delta.status;
         error = delta.error;
         break;
     }

@@ -951,6 +951,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_runtime_incarnation(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_scroll_terminal(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -1260,6 +1264,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolve_control_socket(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_resolved_socket_path(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_id(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_incarnation(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_scroll_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry(): number;

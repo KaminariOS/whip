@@ -34,7 +34,7 @@ function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
   };
 }
 
-function fakeTransport(initial = state(1)) {
+function fakeTransport(initial = state(1), runtimeIncarnation = 1) {
   let current = initial;
   let handler: ((event: NativeAgentTranscriptUpdate) => void) | undefined;
   const terminals = new Set<string>();
@@ -42,7 +42,7 @@ function fakeTransport(initial = state(1)) {
     bindAgentSession: jest.fn((_agent, terminalId, _sessionId, next) => {
       terminals.add(terminalId);
       handler = next;
-      return { key: nativeKey, state: current };
+      return { runtimeIncarnation, key: nativeKey, state: current };
     }),
     startAgentSession: jest.fn((_terminalId, _key, _cache) => current),
     agentTranscript: jest.fn(() => current),
@@ -54,9 +54,12 @@ function fakeTransport(initial = state(1)) {
   };
   return {
     value,
-    update(update: Omit<NativeAgentTranscriptUpdate, 'key'>, snapshot?: NativeAgentTranscriptState) {
+    update(
+      update: Omit<NativeAgentTranscriptUpdate, 'key' | 'runtimeIncarnation'>,
+      snapshot?: NativeAgentTranscriptState,
+    ) {
       if (snapshot) current = snapshot;
-      handler?.({ key: nativeKey, ...update });
+      handler?.({ runtimeIncarnation, key: nativeKey, ...update });
     },
   };
 }
@@ -78,6 +81,32 @@ function assistantText(service: CodexTranscriptService, key: string): string | u
 }
 
 describe('Codex native transcript facade', () => {
+  test('treats a failed snapshot as loading while its native retry starts', async () => {
+    const unavailable = state(4);
+    unavailable.status = 'unavailable';
+    unavailable.error = 'rollout not created yet';
+    unavailable.messages = [];
+    unavailable.turns = [];
+    const remote = fakeTransport(unavailable);
+    const service = new CodexTranscriptService(new MemoryAgentChatCache());
+
+    const key = service.activate(
+      'host-runtime',
+      'terminal-1',
+      sessionId,
+      remote.value,
+    );
+
+    expect(service.getState(key)).toEqual(expect.objectContaining({
+      revision: 4,
+      status: 'loading',
+      error: undefined,
+    }));
+    await flush();
+    expect(remote.value.startAgentSession).toHaveBeenCalled();
+    expect(service.getState(key)?.status).toBe('loading');
+  });
+
   test('hands an opaque cache blob to Rust and projects the typed initial state', async () => {
     const cache = new MemoryAgentChatCache();
     const blob = new Uint8Array([1, 2, 3]).buffer;
@@ -130,7 +159,7 @@ describe('Codex native transcript facade', () => {
     loading.error = undefined;
     loading.messages = [];
     loading.turns = [];
-    const replacement = fakeTransport(loading);
+    const replacement = fakeTransport(loading, 2);
     service.activate(
       'host-runtime',
       'terminal-1',
@@ -153,6 +182,46 @@ describe('Codex native transcript facade', () => {
       status: 'live',
       error: undefined,
     }));
+  });
+
+  test('ignores a late close from a replaced native runtime incarnation', async () => {
+    const oldRemote = fakeTransport(state(1, 'old native lifecycle'), 1);
+    const service = new CodexTranscriptService(new MemoryAgentChatCache());
+    const key = service.activate(
+      'host-runtime',
+      'terminal-1',
+      sessionId,
+      oldRemote.value,
+    );
+    await flush();
+
+    const loading = state(0, 'replacement native lifecycle');
+    loading.status = 'loading';
+    loading.messages = [];
+    loading.turns = [];
+    const replacement = fakeTransport(loading, 2);
+    service.activate(
+      'host-runtime',
+      'terminal-1',
+      sessionId,
+      replacement.value,
+    );
+    await flush();
+    const replacementLive = state(1, 'replacement native lifecycle');
+    replacement.update({
+      revision: 1,
+      deltas: [{ type: 'reset', state: replacementLive }],
+    }, replacementLive);
+    oldRemote.update({
+      revision: 2,
+      deltas: [{ type: 'status-changed', status: 'closed' }],
+    });
+
+    expect(service.getState(key)).toEqual(expect.objectContaining({
+      revision: 1,
+      status: 'live',
+    }));
+    expect(assistantText(service, key)).toBe('replacement native lifecycle');
   });
 
   test('resyncs from a full snapshot after a revision gap', async () => {

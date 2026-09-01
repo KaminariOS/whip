@@ -3298,6 +3298,7 @@ const FfiConverterTypeAgentTranscriptState = (() => {
 })();
 
 export type AgentSessionOpenResult = {
+  runtimeIncarnation: bigint;
   key: string;
   state: AgentTranscriptState;
 };
@@ -3326,16 +3327,19 @@ const FfiConverterTypeAgentSessionOpenResult = (() => {
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       return {
+        runtimeIncarnation: FfiConverterUInt64.read(from),
         key: FfiConverterString.read(from),
         state: FfiConverterTypeAgentTranscriptState.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.runtimeIncarnation, into);
       FfiConverterString.write(value.key, into);
       FfiConverterTypeAgentTranscriptState.write(value.state, into);
     }
     allocationSize(value: TypeName): number {
       return (
+        FfiConverterUInt64.allocationSize(value.runtimeIncarnation) +
         FfiConverterString.allocationSize(value.key) +
         FfiConverterTypeAgentTranscriptState.allocationSize(value.state)
       );
@@ -4004,6 +4008,7 @@ const FfiConverterTypeAgentTranscriptUpdate = (() => {
 
 export type AgentTranscriptEvent = {
   runtimeId: string;
+  runtimeIncarnation: bigint;
   key: string;
   update: AgentTranscriptUpdate;
   cacheWrite?: AgentTranscriptCacheWrite;
@@ -4033,6 +4038,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
     read(from: RustBuffer): TypeName {
       return {
         runtimeId: FfiConverterString.read(from),
+        runtimeIncarnation: FfiConverterUInt64.read(from),
         key: FfiConverterString.read(from),
         update: FfiConverterTypeAgentTranscriptUpdate.read(from),
         cacheWrite:
@@ -4041,6 +4047,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
     }
     write(value: TypeName, into: RustBuffer): void {
       FfiConverterString.write(value.runtimeId, into);
+      FfiConverterUInt64.write(value.runtimeIncarnation, into);
       FfiConverterString.write(value.key, into);
       FfiConverterTypeAgentTranscriptUpdate.write(value.update, into);
       FfiConverterOptionalTypeAgentTranscriptCacheWrite.write(
@@ -4051,6 +4058,7 @@ const FfiConverterTypeAgentTranscriptEvent = (() => {
     allocationSize(value: TypeName): number {
       return (
         FfiConverterString.allocationSize(value.runtimeId) +
+        FfiConverterUInt64.allocationSize(value.runtimeIncarnation) +
         FfiConverterString.allocationSize(value.key) +
         FfiConverterTypeAgentTranscriptUpdate.allocationSize(value.update) +
         FfiConverterOptionalTypeAgentTranscriptCacheWrite.allocationSize(
@@ -19990,6 +19998,7 @@ export interface HostRuntimeLike {
   }): /*throws*/ Promise<string>;
   resolvedSocketPath(): string | undefined;
   runtimeId(): string;
+  runtimeIncarnation(): bigint;
   scrollTerminal(
     terminalId: string,
     up: boolean,
@@ -21491,6 +21500,20 @@ export class HostRuntime
       uniffiCaller.rustCall(
         /*caller:*/ callStatus => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_runtime_id(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  runtimeIncarnation(): bigint {
+    return FfiConverterUInt64.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_runtime_incarnation(
             uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
             callStatus,
           );
@@ -25814,6 +25837,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_runtime_id',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_runtime_incarnation() !==
+    44722
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_runtime_incarnation',
     );
   }
   if (

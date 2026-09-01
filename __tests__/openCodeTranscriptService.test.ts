@@ -27,7 +27,7 @@ function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
   };
 }
 
-function fakeTransport(initial = state(1)) {
+function fakeTransport(initial = state(1), runtimeIncarnation = 1) {
   let current = initial;
   let handler: ((event: NativeAgentTranscriptUpdate) => void) | undefined;
   const terminals = new Set<string>();
@@ -35,7 +35,7 @@ function fakeTransport(initial = state(1)) {
     bindAgentSession: jest.fn((_agent, terminalId, _sessionId, next) => {
       terminals.add(terminalId);
       handler = next;
-      return { key: nativeKey, state: current };
+      return { runtimeIncarnation, key: nativeKey, state: current };
     }),
     startAgentSession: jest.fn((_terminalId, _key, _cache) => current),
     agentTranscript: jest.fn(() => current),
@@ -47,9 +47,12 @@ function fakeTransport(initial = state(1)) {
   };
   return {
     value,
-    update(update: Omit<NativeAgentTranscriptUpdate, 'key'>, snapshot?: NativeAgentTranscriptState) {
+    update(
+      update: Omit<NativeAgentTranscriptUpdate, 'key' | 'runtimeIncarnation'>,
+      snapshot?: NativeAgentTranscriptState,
+    ) {
       if (snapshot) current = snapshot;
-      handler?.({ key: nativeKey, ...update });
+      handler?.({ runtimeIncarnation, key: nativeKey, ...update });
     },
   };
 }

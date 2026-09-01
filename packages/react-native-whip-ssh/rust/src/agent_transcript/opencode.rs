@@ -198,6 +198,18 @@ impl OpenCodeSessionCore {
         self.status_update()
     }
 
+    pub fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
+        if self.cursor.is_none() {
+            self.status = AgentTranscriptStatus::Loading;
+            self.error = None;
+        } else {
+            self.status = AgentTranscriptStatus::Stale;
+            self.error = Some(reason.into());
+        }
+        self.bump_revision();
+        self.status_update()
+    }
+
     pub fn mark_unavailable(&mut self, error: impl Into<String>) -> AgentTranscriptState {
         self.mark_unavailable_update(error);
         self.state()
