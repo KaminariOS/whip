@@ -132,6 +132,52 @@ pub(super) async fn connect_chain(
     }
 }
 
+pub(super) async fn connect_chain_until_cancelled(
+    inner: &RuntimeInner,
+    cancellation: &mut watch::Receiver<u64>,
+) -> Option<Result<(Arc<SshSession>, Vec<Arc<SshSession>>), HostRuntimeError>> {
+    let mut jumps: Vec<Arc<SshSession>> = Vec::new();
+    for jump in &inner.config.jump_hosts {
+        let jump_config = ssh_config(jump);
+        let connected = tokio::select! {
+            biased;
+            changed = cancellation.changed() => {
+                let _ = changed;
+                disconnect_sessions(jumps).await;
+                return None;
+            }
+            result = SshSession::connect(&jump_config, jumps.last().map(Arc::as_ref)) => result,
+        };
+        match connected {
+            Ok(session) => jumps.push(session),
+            Err(error) => {
+                disconnect_sessions(jumps).await;
+                return Some(Err(error.into()));
+            }
+        }
+    }
+    let target_config = ssh_config(&inner.config.ssh);
+    let connected = tokio::select! {
+        biased;
+        changed = cancellation.changed() => {
+            let _ = changed;
+            disconnect_sessions(jumps).await;
+            return None;
+        }
+        result = SshSession::connect(
+            &target_config,
+            jumps.last().map(Arc::as_ref),
+        ) => result,
+    };
+    Some(match connected {
+        Ok(session) => Ok((session, jumps)),
+        Err(error) => {
+            disconnect_sessions(jumps).await;
+            Err(error.into())
+        }
+    })
+}
+
 pub(super) async fn finish_connection(
     inner: Arc<RuntimeInner>,
     epoch: u64,
@@ -254,6 +300,95 @@ pub(super) fn runtime_jitter(inner: &RuntimeInner, attempt: u32) -> f64 {
     f64::from(u32::try_from(value % 10_000).unwrap_or_default()) / 9_999.0
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ReconnectPhase {
+    Fast,
+    Persistent,
+}
+
+impl ReconnectPhase {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Persistent => "persistent",
+        }
+    }
+
+    fn diagnostic_operation(self) -> RuntimeDiagnosticOperation {
+        match self {
+            Self::Fast => RuntimeDiagnosticOperation::SshReconnectFast,
+            Self::Persistent => RuntimeDiagnosticOperation::SshReconnectPersistent,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ReconnectAttempt {
+    pub(super) total: u32,
+    pub(super) phase: ReconnectPhase,
+    pub(super) phase_attempt: u32,
+    pub(super) delay_ms: u64,
+}
+
+pub(super) fn persistent_reconnect_delay(attempt: u32, random_unit: f64) -> u64 {
+    let upper_bound = INITIAL_PERSISTENT_RECONNECT_DELAY_MS
+        .saturating_mul(1_u64 << attempt.saturating_sub(1).min(2))
+        .min(MAX_PERSISTENT_RECONNECT_DELAY_MS);
+    let random_unit = random_unit.clamp(0.0, 1.0);
+    let delay = Duration::from_millis(upper_bound)
+        .mul_f64(0.75 + random_unit * 0.25)
+        .saturating_add(Duration::from_micros(500));
+    u64::try_from(delay.as_millis()).unwrap_or(MAX_PERSISTENT_RECONNECT_DELAY_MS)
+}
+
+pub(super) fn reconnect_attempt(total: u32, immediate: bool, random_unit: f64) -> ReconnectAttempt {
+    if total <= MAX_RECONNECT_ATTEMPTS {
+        ReconnectAttempt {
+            total,
+            phase: ReconnectPhase::Fast,
+            phase_attempt: total,
+            delay_ms: if immediate && total == 1 {
+                0
+            } else {
+                reconnect_delay(total, random_unit)
+            },
+        }
+    } else {
+        let phase_attempt = total.saturating_sub(MAX_RECONNECT_ATTEMPTS);
+        ReconnectAttempt {
+            total,
+            phase: ReconnectPhase::Persistent,
+            phase_attempt,
+            delay_ms: persistent_reconnect_delay(phase_attempt, random_unit),
+        }
+    }
+}
+
+pub(super) async fn wait_for_reconnect_delay(
+    inner: &RuntimeInner,
+    delay_ms: u64,
+    cancellation: &mut watch::Receiver<u64>,
+) -> bool {
+    if delay_ms == 0 {
+        return true;
+    }
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(delay_ms);
+    loop {
+        tokio::select! {
+            () = tokio::time::sleep_until(deadline) => return true,
+            changed = cancellation.changed() => {
+                let _ = changed;
+                return false;
+            }
+            () = inner.reconnect_wakeup.notified() => {
+                if inner.monitoring.lock().app_active {
+                    return true;
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn begin_reconnect_for_generation(
     inner: Arc<RuntimeInner>,
     expected_generation: Option<u64>,
@@ -291,6 +426,23 @@ pub(super) fn begin_reconnect(inner: Arc<RuntimeInner>, reason: String, immediat
     begin_reconnect_for_generation(inner, None, reason, immediate)
 }
 
+pub(super) fn record_reconnect_failure(
+    inner: &RuntimeInner,
+    epoch: u64,
+    attempt: u32,
+    error: &str,
+) -> bool {
+    let mut state = inner.state.lock();
+    if state.epoch != epoch || state.explicit_disconnect || !state.reconnect_running {
+        return false;
+    }
+    state.connection = HostConnectionState::Reconnecting;
+    state.reconnect_attempt = attempt;
+    state.last_error = Some(error.to_owned());
+    state.host_state.mark_reconnecting(error.to_owned());
+    true
+}
+
 pub(super) async fn reconnect_loop(
     inner: Arc<RuntimeInner>,
     epoch: u64,
@@ -302,34 +454,43 @@ pub(super) async fn reconnect_loop(
     close_all_herdr_terminal_bridges(inner.id.clone());
     let mut cancellation = inner.cancellation.subscribe();
     let mut last_error = initial_reason;
-    for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
-        let delay_ms = if immediate && attempt == 1 {
-            0
-        } else {
-            reconnect_delay(attempt, runtime_jitter(&inner, attempt))
-        };
+    let mut total_attempt = 1_u32;
+    loop {
+        let attempt = reconnect_attempt(
+            total_attempt,
+            immediate,
+            runtime_jitter(&inner, total_attempt),
+        );
         {
             let mut state = inner.state.lock();
             if state.epoch != epoch || state.explicit_disconnect {
                 return;
             }
-            state.reconnect_attempt = attempt;
+            state.reconnect_attempt = attempt.total;
             state.last_error = Some(last_error.clone());
         }
         publish_lifecycle_status(&inner);
+        let scheduled_reason = format!(
+            "{} SSH reconnect attempt {}: {}",
+            attempt.phase.label(),
+            attempt.phase_attempt,
+            last_error
+        );
         emit(HostRuntimeEvent::ReconnectScheduled {
             runtime_id: inner.id.clone(),
-            attempt,
-            delay_ms,
-            reason: last_error.clone(),
+            attempt: attempt.total,
+            delay_ms: attempt.delay_ms,
+            reason: scheduled_reason,
         });
-        if delay_ms > 0 {
-            tokio::select! {
-                _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
-                _ = cancellation.changed() => return,
-            }
+        if !wait_for_reconnect_delay(&inner, attempt.delay_ms, &mut cancellation).await {
+            return;
         }
-        match connect_chain(&inner).await {
+        let attempt_started_at = Instant::now();
+        let Some(connection) = connect_chain_until_cancelled(&inner, &mut cancellation).await
+        else {
+            return;
+        };
+        match connection {
             Ok((ssh, jumps)) => {
                 match finish_connection(inner.clone(), epoch, ssh, jumps, true).await {
                     Ok(restored) => {
@@ -352,35 +513,29 @@ pub(super) async fn reconnect_loop(
                     Err(_) => return,
                 }
             }
-            Err(error) => last_error = error.to_string(),
+            Err(error) => {
+                last_error = error.to_string();
+                if !record_reconnect_failure(&inner, epoch, attempt.total, &last_error) {
+                    return;
+                }
+                publish_lifecycle_status(&inner);
+                emit_host_state(&inner);
+                emit_diagnostic(
+                    &inner,
+                    attempt.phase.diagnostic_operation(),
+                    attempt_started_at,
+                    None,
+                    None,
+                    Some(format!(
+                        "{} SSH reconnect attempt {} failed: {last_error}",
+                        attempt.phase.label(),
+                        attempt.phase_attempt
+                    )),
+                );
+            }
         }
+        total_attempt = total_attempt.saturating_add(1);
     }
-    {
-        let mut state = inner.state.lock();
-        if state.epoch != epoch || state.explicit_disconnect {
-            return;
-        }
-        state.connection = HostConnectionState::Failed;
-        state.reconnect_running = false;
-        state.last_error = Some(last_error.clone());
-        state.host_state.mark_reconnecting(last_error.clone());
-    }
-    publish_lifecycle_status(&inner);
-    emit_host_state(&inner);
-    emit(HostRuntimeEvent::FatalError {
-        runtime_id: inner.id.clone(),
-        message: format!(
-            "host reconnect exhausted after {MAX_RECONNECT_ATTEMPTS} attempts: {last_error}"
-        ),
-    });
-    emit_diagnostic(
-        &inner,
-        RuntimeDiagnosticOperation::SshReconnect,
-        started_at,
-        None,
-        None,
-        Some(last_error),
-    );
 }
 
 pub(super) async fn wait_for_reconnect(
@@ -417,6 +572,103 @@ pub(super) fn is_transport_control_error(error: &HerdrControlError) -> bool {
         error,
         HerdrControlError::TransportDisconnected(_) | HerdrControlError::RequestTimeout(_)
     )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RecoveryScope {
+    Herdr,
+    Ssh,
+}
+
+pub(super) fn recovery_scope_for_transport_state(
+    error: &HerdrControlError,
+    ssh_alive: bool,
+) -> RecoveryScope {
+    match error {
+        HerdrControlError::RequestTimeout(_) | HerdrControlError::TransportDisconnected(_)
+            if ssh_alive =>
+        {
+            RecoveryScope::Herdr
+        }
+        _ => RecoveryScope::Ssh,
+    }
+}
+
+pub(super) async fn confirm_ssh_health(
+    inner: &Arc<RuntimeInner>,
+    generation: u64,
+) -> Result<(), HostRuntimeError> {
+    let started_at = Instant::now();
+    let result = match current_ssh(inner) {
+        Ok(ssh) => ssh.latency_ms().await.map(|_| ()).map_err(Into::into),
+        Err(error) => Err(error),
+    }
+    .and_then(|()| validate_generation(inner, generation));
+    emit_diagnostic(
+        inner,
+        RuntimeDiagnosticOperation::HostLatencyProbe,
+        started_at,
+        None,
+        None,
+        result.as_ref().err().map(ToString::to_string),
+    );
+    result
+}
+
+pub(super) async fn recover_herdr_only(
+    inner: Arc<RuntimeInner>,
+    generation: u64,
+    observed_revision: u64,
+) -> Result<(), HostRuntimeError> {
+    let _recovery = inner.herdr_recovery.lock().await;
+    validate_generation(&inner, generation)?;
+    {
+        let state = inner.state.lock();
+        if state.herdr_recovery_revision != observed_revision {
+            return state.herdr_recovery_error.clone().map_or(Ok(()), |error| {
+                Err(HostRuntimeError::HerdrUnavailable(error))
+            });
+        }
+    }
+
+    let started_at = Instant::now();
+    emit_diagnostic_started(&inner, RuntimeDiagnosticOperation::HerdrRecovery, None);
+    let result = start_herdr_server_inner(inner.clone()).await;
+    {
+        let mut state = inner.state.lock();
+        if state.connection == HostConnectionState::Connected && state.generation == generation {
+            state.herdr_recovery_revision = state.herdr_recovery_revision.wrapping_add(1);
+            state.herdr_recovery_error = result.as_ref().err().map(ToString::to_string);
+        }
+    }
+    emit_diagnostic(
+        &inner,
+        RuntimeDiagnosticOperation::HerdrRecovery,
+        started_at,
+        None,
+        None,
+        result.as_ref().err().map(|error| {
+            format!("Herdr-only recovery failed while SSH remained installed: {error}")
+        }),
+    );
+    result
+}
+
+async fn recover_control_failure(
+    inner: Arc<RuntimeInner>,
+    generation: u64,
+    error: &HerdrControlError,
+) -> RecoveryScope {
+    let ssh_alive = current_ssh(&inner).is_ok_and(|ssh| ssh.is_alive());
+    let mut scope = recovery_scope_for_transport_state(error, ssh_alive);
+    if matches!(error, HerdrControlError::RequestTimeout(_)) && scope == RecoveryScope::Herdr {
+        scope = if confirm_ssh_health(&inner, generation).await.is_ok() {
+            RecoveryScope::Herdr
+        } else {
+            RecoveryScope::Ssh
+        };
+    }
+    scope
 }
 
 pub(super) fn idempotent_replay(request: &HerdrControlRequest) -> bool {
@@ -489,12 +741,16 @@ pub(super) async fn control_request_inner(
         }
         _ => None,
     };
-    let state = inner.state.lock().connection;
-    if state != HostConnectionState::Connected {
-        return Err(HerdrControlError::TransportDisconnected(format!(
-            "host runtime is {state:?}"
-        )));
-    }
+    let generation = {
+        let state = inner.state.lock();
+        if state.connection != HostConnectionState::Connected {
+            return Err(HerdrControlError::TransportDisconnected(format!(
+                "host runtime is {:?}",
+                state.connection
+            )));
+        }
+        state.generation
+    };
     let started_at = Instant::now();
     let result = request_on_runtime(
         inner.herdr.clone(),
@@ -520,36 +776,82 @@ pub(super) async fn control_request_inner(
             Ok(result)
         }
         Err(error) if is_transport_control_error(&error) => {
-            // A missing Herdr socket is a product availability state, not proof
-            // that the authenticated SSH transport died. HostState records the
-            // failed snapshot as unavailable while retaining any known state.
+            // Snapshot reads are authoritative but side-effect free. Preserve
+            // the last known host state and let the caller's existing resync
+            // policy decide when to retry; in particular, do not recursively
+            // enter Herdr recovery while recovery itself reconciles events.
             if matches!(request_for_state, HerdrControlRequest::SessionSnapshot) {
                 return Err(error);
             }
             let reason = error.to_string();
-            if idempotent_replay(&request) {
-                let status_rx = inner.status_tx.subscribe();
-                begin_reconnect(inner.clone(), reason, true);
-                wait_for_reconnect(status_rx)
-                    .await
-                    .map_err(|error| HerdrControlError::TransportDisconnected(error.to_string()))?;
-                let result = request_on_runtime(
-                    inner.herdr.clone(),
-                    request,
-                    request_replay(&request_for_state),
-                )
-                .await?;
-                update_server_from_result(&inner, &result);
-                reconcile_control_result(
-                    &inner,
-                    &request_for_state,
-                    &result,
-                    pane_close_terminal_id.as_deref(),
-                );
-                Ok(result)
-            } else {
-                begin_reconnect(inner.clone(), reason, false);
-                Err(error)
+            match recover_control_failure(inner.clone(), generation, &error).await {
+                RecoveryScope::Herdr => {
+                    let recovery_revision = inner.state.lock().herdr_recovery_revision;
+                    let recovered = Box::pin(recover_herdr_only(
+                        inner.clone(),
+                        generation,
+                        recovery_revision,
+                    ))
+                    .await;
+                    if recovered.is_err() && current_ssh(&inner).is_err() {
+                        begin_reconnect_for_generation(
+                            inner.clone(),
+                            Some(generation),
+                            format!(
+                                "confirmed SSH transport failure after Herdr recovery: {reason}"
+                            ),
+                            true,
+                        );
+                    }
+                    if recovered.is_ok() && idempotent_replay(&request) {
+                        let result = request_on_runtime(
+                            inner.herdr.clone(),
+                            request,
+                            request_replay(&request_for_state),
+                        )
+                        .await?;
+                        update_server_from_result(&inner, &result);
+                        reconcile_control_result(
+                            &inner,
+                            &request_for_state,
+                            &result,
+                            pane_close_terminal_id.as_deref(),
+                        );
+                        Ok(result)
+                    } else {
+                        Err(error)
+                    }
+                }
+                RecoveryScope::Ssh => {
+                    let status_rx = inner.status_tx.subscribe();
+                    begin_reconnect_for_generation(
+                        inner.clone(),
+                        Some(generation),
+                        format!("confirmed SSH transport failure: {reason}"),
+                        true,
+                    );
+                    if idempotent_replay(&request) {
+                        wait_for_reconnect(status_rx).await.map_err(|error| {
+                            HerdrControlError::TransportDisconnected(error.to_string())
+                        })?;
+                        let result = request_on_runtime(
+                            inner.herdr.clone(),
+                            request,
+                            request_replay(&request_for_state),
+                        )
+                        .await?;
+                        update_server_from_result(&inner, &result);
+                        reconcile_control_result(
+                            &inner,
+                            &request_for_state,
+                            &result,
+                            pane_close_terminal_id.as_deref(),
+                        );
+                        Ok(result)
+                    } else {
+                        Err(error)
+                    }
+                }
             }
         }
         Err(error) => Err(error),
@@ -926,6 +1228,16 @@ impl HostRuntime {
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
+                let connected = {
+                    let state = inner.state.lock();
+                    (state.connection == HostConnectionState::Connected)
+                        .then_some((state.generation, state.herdr_recovery_revision))
+                };
+                if let Some((generation, recovery_revision)) = connected
+                    && confirm_ssh_health(&inner, generation).await.is_ok()
+                {
+                    return recover_herdr_only(inner, generation, recovery_revision).await;
+                }
                 let status_rx = inner.status_tx.subscribe();
                 begin_reconnect(inner.clone(), reason, immediate);
                 wait_for_reconnect(status_rx).await

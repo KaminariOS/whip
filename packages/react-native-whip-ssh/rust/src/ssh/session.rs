@@ -208,7 +208,7 @@ impl SshSession {
         columns: u32,
         rows: u32,
         data: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
-        closed: Arc<dyn Fn(String) + Send + Sync>,
+        closed: Arc<dyn Fn(SshShellClose) + Send + Sync>,
     ) -> Result<(), SshFailure> {
         start_shell_on(
             self.resource_key.clone(),

@@ -620,12 +620,26 @@ enum ShellCommand {
     Close,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SshShellClose {
+    TransportDisconnected(String),
+    ChannelClosed(String),
+}
+
+impl SshShellClose {
+    pub(crate) fn reason(&self) -> &str {
+        match self {
+            Self::TransportDisconnected(reason) | Self::ChannelClosed(reason) => reason,
+        }
+    }
+}
+
 #[derive(Clone)]
 enum ShellDelivery {
     ReactNative,
     Rust {
         data: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
-        closed: Arc<dyn Fn(String) + Send + Sync>,
+        closed: Arc<dyn Fn(SshShellClose) + Send + Sync>,
     },
 }
 
@@ -1298,25 +1312,32 @@ async fn start_shell_on(
                     _ => {}
                 }
             }
-            close_reason
+            SshShellClose::ChannelClosed(close_reason)
         };
         let write_loop = async {
             loop {
                 match receiver.recv().await {
                     Some(ShellCommand::Write(data)) => {
                         if let Err(error) = writer.data_bytes(data).await {
-                            break shell_write_failure("channel write", &error);
+                            break SshShellClose::ChannelClosed(shell_write_failure(
+                                "channel write",
+                                &error,
+                            ));
                         }
                     }
                     Some(ShellCommand::Resize { columns, rows }) => {
                         if let Err(error) = writer.window_change(columns, rows, 0, 0).await {
-                            break shell_write_failure("resize", &error);
+                            break SshShellClose::ChannelClosed(shell_write_failure(
+                                "resize", &error,
+                            ));
                         }
                     }
                     Some(ShellCommand::Close) | None => {
                         let _ = writer.eof().await;
                         let _ = writer.close().await;
-                        break "shell closed by application".to_owned();
+                        break SshShellClose::ChannelClosed(
+                            "shell closed by application".to_owned(),
+                        );
                     }
                 }
             }
@@ -1325,7 +1346,11 @@ async fn start_shell_on(
             read_loop,
             write_loop,
             async move { lifecycle.disconnected().await.reason.clone() },
-            |reason| format!("SSH transport disconnected: {reason}"),
+            |reason| {
+                SshShellClose::TransportDisconnected(format!(
+                    "SSH transport disconnected: {reason}"
+                ))
+            },
         )
         .await;
         let _ = writer.eof().await;

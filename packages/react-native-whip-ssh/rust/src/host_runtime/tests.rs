@@ -108,11 +108,13 @@ fn runtime_inner_with_state(
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
+        herdr_recovery: AsyncMutex::new(()),
         cancellation,
         status_tx,
         terminal_settled: Notify::new(),
         monitoring: Mutex::new(MonitoringState::default()),
         monitoring_changed: Arc::new(Notify::new()),
+        reconnect_wakeup: Arc::new(Notify::new()),
     })
 }
 
@@ -128,6 +130,22 @@ fn connected_runtime_inner(id: &str) -> Arc<RuntimeInner> {
         retry_running: false,
     });
     runtime_inner_with_state(id, runtime_config, state)
+}
+
+fn desired_ssh_shell(
+    state: HostTerminalState,
+    geometry: HostTerminalGeometry,
+    operation_epoch: u64,
+) -> SshShellRuntime {
+    SshShellRuntime {
+        desired_open: true,
+        state,
+        geometry,
+        dispatched_geometry: (state == HostTerminalState::Attached).then_some(geometry),
+        operation_epoch,
+        reconnect_attempt: 0,
+        retry_running: false,
+    }
 }
 
 fn empty_ready_snapshot() -> ReadyHerdrSnapshot {
@@ -932,7 +950,7 @@ fn reconnect_receiver_created_while_connected_returns_immediately() {
 }
 
 #[test]
-fn reconnect_exhaustion_preserves_latest_error() {
+fn failed_status_preserves_latest_error_for_waiters() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     crate::runtime().unwrap().block_on(async {
         let inner = connected_runtime_inner("reconnect-exhaustion-wait-test");
@@ -1078,10 +1096,13 @@ fn ssh_shell_notify_wakes_concurrent_open_waiter() {
         inner.state.lock().ssh_shells.insert(
             "ssh-shell-1".to_owned(),
             SshShellRuntime {
+                desired_open: true,
                 state: HostTerminalState::Opening,
                 geometry: HostTerminalGeometry::normalized(100, 30, 8, 16),
                 dispatched_geometry: None,
                 operation_epoch: 1,
+                reconnect_attempt: 0,
+                retry_running: true,
             },
         );
         let waiter_inner = inner.clone();
@@ -1260,6 +1281,313 @@ fn simultaneous_transport_failures_start_one_reconnect() {
 }
 
 #[test]
+fn herdr_timeout_with_healthy_ssh_selects_only_herdr_recovery() {
+    let mut state = RuntimeState::new(&config());
+    let epoch = state.begin_connect().unwrap();
+    assert!(state.install_connection(epoch));
+    state.terminals.insert(
+        "terminal-1".to_owned(),
+        TerminalRuntime {
+            state: HostTerminalState::Attached,
+            takeover: true,
+            columns: 80,
+            rows: 24,
+            cell_width_px: 8,
+            cell_height_px: 16,
+            operation_epoch: 1,
+            reconnect_attempt: 0,
+            retry_running: false,
+            bridge_id: Some(7),
+        },
+    );
+
+    assert_eq!(
+        recovery_scope_for_transport_state(
+            &HerdrControlError::RequestTimeout("Herdr request timed out".to_owned()),
+            true,
+        ),
+        RecoveryScope::Herdr
+    );
+    assert_eq!(state.connection, HostConnectionState::Connected);
+    assert_eq!(state.generation, 1);
+    assert_eq!(
+        state.terminals["terminal-1"].state,
+        HostTerminalState::Attached
+    );
+    assert!(!state.reconnect_running);
+}
+
+#[test]
+fn herdr_timeout_with_dead_ssh_starts_exactly_one_host_reconnect() {
+    let mut state = RuntimeState::new(&config());
+    let epoch = state.begin_connect().unwrap();
+    assert!(state.install_connection(epoch));
+    assert_eq!(
+        recovery_scope_for_transport_state(
+            &HerdrControlError::RequestTimeout("Herdr request timed out".to_owned()),
+            false,
+        ),
+        RecoveryScope::Ssh
+    );
+
+    let reconnect_epoch = state
+        .begin_reconnect(Some(1), "confirmed SSH transport failure")
+        .expect("dead SSH starts reconnect")
+        .0;
+    assert!(
+        state
+            .begin_reconnect(Some(1), "duplicate timeout")
+            .is_none()
+    );
+    assert_eq!(state.connection, HostConnectionState::Reconnecting);
+    assert!(state.reconnect_running);
+    assert_ne!(reconnect_epoch, epoch);
+}
+
+#[test]
+fn explicit_ssh_disconnect_bypasses_herdr_recovery() {
+    assert_eq!(
+        recovery_scope_for_transport_state(
+            &HerdrControlError::TransportDisconnected("SSH transport disconnected".to_owned(),),
+            false,
+        ),
+        RecoveryScope::Ssh
+    );
+}
+
+#[test]
+fn reconnect_policy_enters_persistent_phase_after_fast_attempts() {
+    assert_eq!(reconnect_attempt(1, true, 1.0).delay_ms, 0);
+    assert_eq!(reconnect_attempt(5, true, 1.0).phase, ReconnectPhase::Fast);
+    let first_persistent = reconnect_attempt(6, true, 1.0);
+    assert_eq!(first_persistent.phase, ReconnectPhase::Persistent);
+    assert_eq!(first_persistent.phase_attempt, 1);
+    assert_eq!(first_persistent.delay_ms, 15_000);
+    assert_eq!(reconnect_attempt(7, true, 1.0).delay_ms, 30_000);
+    assert_eq!(reconnect_attempt(8, true, 1.0).delay_ms, 60_000);
+    assert_eq!(reconnect_attempt(30, true, 1.0).delay_ms, 60_000);
+}
+
+#[test]
+fn persistent_failures_keep_runtime_reconnecting_and_worker_owned() {
+    let inner = connected_runtime_inner("persistent-reconnect-test");
+    let epoch = inner
+        .state
+        .lock()
+        .begin_reconnect(None, "transport lost")
+        .expect("connected runtime starts reconnect")
+        .0;
+    for attempt in 1..=8 {
+        assert!(record_reconnect_failure(
+            &inner,
+            epoch,
+            attempt,
+            "network unavailable"
+        ));
+    }
+    let state = inner.state.lock();
+    assert_eq!(state.connection, HostConnectionState::Reconnecting);
+    assert_eq!(state.reconnect_attempt, 8);
+    assert!(state.reconnect_running);
+    assert_eq!(state.last_error.as_deref(), Some("network unavailable"));
+}
+
+#[test]
+fn persistent_reconnect_success_installs_one_new_generation_and_stops_worker() {
+    let inner = connected_runtime_inner("persistent-success-test");
+    let epoch = inner
+        .state
+        .lock()
+        .begin_reconnect(None, "transport lost")
+        .expect("connected runtime starts reconnect")
+        .0;
+    for attempt in 1..=7 {
+        assert!(record_reconnect_failure(
+            &inner,
+            epoch,
+            attempt,
+            "network unavailable"
+        ));
+    }
+    assert!(inner.state.lock().install_connection(epoch));
+    let state = inner.state.lock();
+    assert_eq!(state.connection, HostConnectionState::Connected);
+    assert_eq!(state.generation, 2);
+    assert!(!state.reconnect_running);
+    assert_eq!(state.reconnect_attempt, 0);
+}
+
+#[test]
+fn explicit_disconnect_cancels_persistent_failure_updates() {
+    let inner = connected_runtime_inner("persistent-disconnect-test");
+    let epoch = inner
+        .state
+        .lock()
+        .begin_reconnect(None, "transport lost")
+        .expect("connected runtime starts reconnect")
+        .0;
+    assert!(record_reconnect_failure(
+        &inner,
+        epoch,
+        6,
+        "network unavailable"
+    ));
+    inner.state.lock().disconnect();
+    assert!(!record_reconnect_failure(
+        &inner,
+        epoch,
+        7,
+        "late reconnect failure"
+    ));
+    let state = inner.state.lock();
+    assert_eq!(state.connection, HostConnectionState::Disconnecting);
+    assert!(state.explicit_disconnect);
+    assert!(!state.reconnect_running);
+    drop(state);
+}
+
+#[test]
+fn foreground_activation_interrupts_a_persistent_reconnect_delay() {
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("persistent-foreground-wake-test");
+        let waiter_inner = inner.clone();
+        let mut cancellation = inner.cancellation.subscribe();
+        let waiter = tokio::spawn(async move {
+            wait_for_reconnect_delay(&waiter_inner, 60_000, &mut cancellation).await
+        });
+        tokio::task::yield_now().await;
+
+        set_monitoring_state(&inner, true, false, false);
+
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_millis(100), waiter).await,
+            Ok(Ok(true))
+        ));
+        set_monitoring_state(&inner, false, false, false);
+    });
+}
+
+#[test]
+fn lifecycle_epoch_change_cancels_a_persistent_reconnect_delay() {
+    crate::runtime().unwrap().block_on(async {
+        let inner = connected_runtime_inner("persistent-epoch-cancel-test");
+        let waiter_inner = inner.clone();
+        let mut cancellation = inner.cancellation.subscribe();
+        let waiter = tokio::spawn(async move {
+            wait_for_reconnect_delay(&waiter_inner, 60_000, &mut cancellation).await
+        });
+        tokio::task::yield_now().await;
+
+        let _ = inner.cancellation.send(17);
+
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_millis(100), waiter).await,
+            Ok(Ok(false))
+        ));
+    });
+}
+
+#[test]
+fn ssh_transport_loss_retains_direct_shell_intent_and_geometry() {
+    let mut state = RuntimeState::new(&config());
+    let epoch = state.begin_connect().unwrap();
+    assert!(state.install_connection(epoch));
+    let geometry = HostTerminalGeometry::normalized(132, 47, 9, 18);
+    state.ssh_shells.insert(
+        "ssh-shell-1".to_owned(),
+        desired_ssh_shell(HostTerminalState::Attached, geometry, 4),
+    );
+
+    assert_eq!(
+        apply_ssh_shell_close(&mut state, "ssh-shell-1", 4, true),
+        SshShellCloseDisposition::Restore
+    );
+    let shell = &state.ssh_shells["ssh-shell-1"];
+    assert!(shell.desired_open);
+    assert_eq!(shell.state, HostTerminalState::Restoring);
+    assert_eq!(shell.geometry, geometry);
+    assert_eq!(shell.dispatched_geometry, None);
+}
+
+#[test]
+fn explicit_shell_close_during_reconnect_cannot_be_restored() {
+    let mut state = RuntimeState::new(&config());
+    let epoch = state.begin_connect().unwrap();
+    assert!(state.install_connection(epoch));
+    let geometry = HostTerminalGeometry::normalized(100, 31, 8, 16);
+    state.ssh_shells.insert(
+        "ssh-shell-1".to_owned(),
+        desired_ssh_shell(HostTerminalState::Attached, geometry, 2),
+    );
+    state
+        .begin_reconnect(Some(1), "SSH transport disconnected")
+        .expect("transport loss starts reconnect");
+    state.ssh_shells.remove("ssh-shell-1");
+
+    assert!(!state.ssh_shells.contains_key("ssh-shell-1"));
+}
+
+#[test]
+fn stale_ssh_shell_open_cannot_resurrect_a_newer_lifecycle() {
+    let mut state = RuntimeState::new(&config());
+    let epoch = state.begin_connect().unwrap();
+    assert!(state.install_connection(epoch));
+    let geometry = HostTerminalGeometry::normalized(80, 24, 8, 16);
+    state.ssh_shells.insert(
+        "ssh-shell-1".to_owned(),
+        desired_ssh_shell(HostTerminalState::Opening, geometry, 9),
+    );
+    assert!(ssh_shell_open_is_current(
+        &state,
+        "ssh-shell-1",
+        epoch,
+        1,
+        9
+    ));
+    state
+        .ssh_shells
+        .get_mut("ssh-shell-1")
+        .unwrap()
+        .operation_epoch = 10;
+    assert!(!ssh_shell_open_is_current(
+        &state,
+        "ssh-shell-1",
+        epoch,
+        1,
+        9
+    ));
+}
+
+#[test]
+fn multiple_desired_ssh_shells_restore_independently() {
+    let mut state = RuntimeState::new(&config());
+    let epoch = state.begin_connect().unwrap();
+    assert!(state.install_connection(epoch));
+    let first_geometry = HostTerminalGeometry::normalized(80, 24, 8, 16);
+    let second_geometry = HostTerminalGeometry::normalized(120, 40, 9, 18);
+    state.ssh_shells.insert(
+        "ssh-shell-1".to_owned(),
+        desired_ssh_shell(HostTerminalState::Attached, first_geometry, 3),
+    );
+    state.ssh_shells.insert(
+        "ssh-shell-2".to_owned(),
+        desired_ssh_shell(HostTerminalState::Attached, second_geometry, 7),
+    );
+    state
+        .begin_reconnect(Some(1), "SSH transport disconnected")
+        .expect("transport loss starts reconnect");
+    state.ssh_shells.get_mut("ssh-shell-1").unwrap().state = HostTerminalState::Failed;
+
+    assert!(state.ssh_shells["ssh-shell-1"].desired_open);
+    assert!(state.ssh_shells["ssh-shell-2"].desired_open);
+    assert_eq!(
+        state.ssh_shells["ssh-shell-2"].state,
+        HostTerminalState::Restoring
+    );
+    assert_eq!(state.ssh_shells["ssh-shell-2"].geometry, second_geometry);
+}
+
+#[test]
 fn stale_session_generation_cannot_reconnect_replacement() {
     let mut state = RuntimeState::new(&config());
     let first = state.begin_connect().unwrap();
@@ -1338,10 +1666,13 @@ fn disconnect_closes_terminal_intent_and_event_subscription() {
     state.ssh_shells.insert(
         "ssh-shell-1".to_owned(),
         SshShellRuntime {
+            desired_open: true,
             state: HostTerminalState::Attached,
             geometry,
             dispatched_geometry: Some(geometry),
             operation_epoch: 4,
+            reconnect_attempt: 0,
+            retry_running: false,
         },
     );
     state.disconnect();
@@ -1354,10 +1685,13 @@ fn disconnect_closes_terminal_intent_and_event_subscription() {
     assert_eq!(terminal.reconnect_attempt, 0);
     assert_eq!(terminal.operation_epoch, 3);
     let shell = &state.ssh_shells["ssh-shell-1"];
+    assert!(!shell.desired_open);
     assert_eq!(shell.state, HostTerminalState::Closed);
     assert_eq!(shell.geometry, geometry);
     assert_eq!(shell.dispatched_geometry, None);
     assert_eq!(shell.operation_epoch, 5);
+    assert_eq!(shell.reconnect_attempt, 0);
+    assert!(!shell.retry_running);
 }
 
 #[test]

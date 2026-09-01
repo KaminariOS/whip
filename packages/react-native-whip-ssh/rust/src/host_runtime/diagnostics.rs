@@ -35,6 +35,25 @@ pub(super) fn emit_diagnostic(
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emit(event)));
 }
 
+pub(super) fn emit_diagnostic_started(
+    inner: &RuntimeInner,
+    operation: RuntimeDiagnosticOperation,
+    terminal_id: Option<String>,
+) {
+    let event = HostRuntimeEvent::Diagnostic {
+        runtime_id: inner.id.clone(),
+        diagnostic: RuntimeDiagnostic {
+            operation,
+            duration_ms: 0.0,
+            transport_duration_ms: None,
+            outcome: RuntimeDiagnosticOutcome::Started,
+            terminal_id,
+            error: None,
+        },
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| emit(event)));
+}
+
 pub(super) fn emit_slow_or_failed_diagnostic(
     inner: &RuntimeInner,
     operation: RuntimeDiagnosticOperation,

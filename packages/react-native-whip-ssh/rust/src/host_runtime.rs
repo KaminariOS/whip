@@ -24,7 +24,7 @@ use crate::herdr_events::close_herdr_event_subscription;
 use crate::herdr_terminal::{HerdrBridgeId, close_all_herdr_terminal_bridges};
 use crate::host_state::{AgentStatusTransition, HostState, HostStateSnapshot};
 use crate::remote_ops::{PreviewState, RemoteOperationManager, TransferProgress};
-use crate::ssh::{SshErrorCode, SshFailure, SshSession};
+use crate::ssh::{SshErrorCode, SshFailure, SshSession, SshShellClose};
 #[cfg(test)]
 use agents::*;
 use connection::*;
@@ -41,6 +41,8 @@ use terminal::*;
 const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 const INITIAL_RECONNECT_DELAY_MS: u64 = 750;
 const MAX_RECONNECT_DELAY_MS: u64 = 8_000;
+const INITIAL_PERSISTENT_RECONNECT_DELAY_MS: u64 = 15_000;
+const MAX_PERSISTENT_RECONNECT_DELAY_MS: u64 = 60_000;
 const HERDR_READINESS_TIMEOUT: Duration = Duration::from_secs(12);
 const HERDR_READINESS_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
 const HERDR_READINESS_INITIAL_BACKOFF: Duration = Duration::from_millis(75);
@@ -157,10 +159,14 @@ pub struct HostRuntimeStatus {
 pub enum RuntimeDiagnosticOperation {
     SshConnect,
     SshReconnect,
+    SshReconnectFast,
+    SshReconnectPersistent,
     HostLatencyProbe,
     HerdrRequest,
+    HerdrRecovery,
     TerminalAttach,
     TerminalRecovery,
+    SshShellRecovery,
     EventStreamRecovery,
 }
 
@@ -168,6 +174,7 @@ pub enum RuntimeDiagnosticOperation {
 pub enum RuntimeDiagnosticOutcome {
     Succeeded,
     Failed,
+    Started,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -347,10 +354,13 @@ struct TerminalRuntime {
 
 #[derive(Clone, Debug)]
 struct SshShellRuntime {
+    desired_open: bool,
     state: HostTerminalState,
     geometry: HostTerminalGeometry,
     dispatched_geometry: Option<HostTerminalGeometry>,
     operation_epoch: u64,
+    reconnect_attempt: u32,
+    retry_running: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -367,6 +377,8 @@ struct RuntimeState {
     epoch: u64,
     reconnect_attempt: u32,
     reconnect_running: bool,
+    herdr_recovery_revision: u64,
+    herdr_recovery_error: Option<String>,
     explicit_disconnect: bool,
     last_error: Option<String>,
     protocol: Option<u32>,
@@ -386,6 +398,8 @@ impl RuntimeState {
             epoch: 0,
             reconnect_attempt: 0,
             reconnect_running: false,
+            herdr_recovery_revision: 0,
+            herdr_recovery_error: None,
             explicit_disconnect: false,
             last_error: None,
             protocol: None,
@@ -461,6 +475,15 @@ impl RuntimeState {
             self.terminal_kitty_keyboard_report_all
                 .insert(terminal_id.clone(), false);
         }
+        for shell in self.ssh_shells.values_mut() {
+            if shell.desired_open {
+                shell.operation_epoch = shell.operation_epoch.wrapping_add(1);
+                shell.state = HostTerminalState::Restoring;
+                shell.dispatched_geometry = None;
+                shell.reconnect_attempt = 0;
+                shell.retry_running = false;
+            }
+        }
         Some((self.epoch, self.generation))
     }
 
@@ -481,9 +504,12 @@ impl RuntimeState {
         self.terminal_dispatched_geometries.clear();
         self.terminal_kitty_keyboard_report_all.clear();
         for shell in self.ssh_shells.values_mut() {
+            shell.desired_open = false;
             shell.operation_epoch = shell.operation_epoch.wrapping_add(1);
             shell.state = HostTerminalState::Closed;
             shell.dispatched_geometry = None;
+            shell.reconnect_attempt = 0;
+            shell.retry_running = false;
         }
         self.host_state.mark_disconnected();
         self.epoch
@@ -499,16 +525,19 @@ struct RuntimeInner {
     agents: AgentSessionManager,
     operations: RemoteOperationManager,
     herdr_startup: AsyncMutex<()>,
+    herdr_recovery: AsyncMutex<()>,
     cancellation: watch::Sender<u64>,
     status_tx: watch::Sender<HostRuntimeStatus>,
     terminal_settled: Notify,
     monitoring: Mutex<MonitoringState>,
     monitoring_changed: Arc<Notify>,
+    reconnect_wakeup: Arc<Notify>,
 }
 
 impl Drop for RuntimeInner {
     fn drop(&mut self) {
         self.monitoring_changed.notify_one();
+        self.reconnect_wakeup.notify_one();
     }
 }
 
@@ -595,12 +624,14 @@ pub fn create_host_runtime(
         herdr,
         jump_sessions: Mutex::new(Vec::new()),
         herdr_startup: AsyncMutex::new(()),
+        herdr_recovery: AsyncMutex::new(()),
         config,
         cancellation,
         status_tx,
         terminal_settled: Notify::new(),
         monitoring: Mutex::new(MonitoringState::default()),
         monitoring_changed: Arc::new(Notify::new()),
+        reconnect_wakeup: Arc::new(Notify::new()),
     });
     runtimes().write().insert(id, Arc::downgrade(&inner));
     Ok(Arc::new(HostRuntime { inner }))
@@ -627,9 +658,6 @@ impl HostRuntime {
 
 impl Drop for HostRuntime {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.inner) != 1 {
-            return;
-        }
         let inner = self.inner.clone();
         runtimes().write().remove(&inner.id);
         let (epoch, generation) = {

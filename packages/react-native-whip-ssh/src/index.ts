@@ -344,17 +344,21 @@ export type RuntimeLifecycleEvent =
 export type RuntimeDiagnosticOperation =
   | 'ssh-connect'
   | 'ssh-reconnect'
+  | 'ssh-reconnect-fast'
+  | 'ssh-reconnect-persistent'
   | 'host-latency-probe'
   | 'herdr-request'
+  | 'herdr-recovery'
   | 'terminal-attach'
   | 'terminal-recovery'
+  | 'ssh-shell-recovery'
   | 'event-stream-recovery';
 
 export type RuntimeDiagnostic = {
   operation: RuntimeDiagnosticOperation;
   durationMs: number;
   transportDurationMs?: number;
-  outcome: 'succeeded' | 'failed';
+  outcome: 'started' | 'succeeded' | 'failed';
   terminalId?: string;
   error?: string;
 };
@@ -1549,10 +1553,14 @@ function runtimeDiagnosticOperation(
   switch (value) {
     case NativeRuntimeDiagnosticOperation.SshConnect: return 'ssh-connect';
     case NativeRuntimeDiagnosticOperation.SshReconnect: return 'ssh-reconnect';
+    case NativeRuntimeDiagnosticOperation.SshReconnectFast: return 'ssh-reconnect-fast';
+    case NativeRuntimeDiagnosticOperation.SshReconnectPersistent: return 'ssh-reconnect-persistent';
     case NativeRuntimeDiagnosticOperation.HostLatencyProbe: return 'host-latency-probe';
     case NativeRuntimeDiagnosticOperation.HerdrRequest: return 'herdr-request';
+    case NativeRuntimeDiagnosticOperation.HerdrRecovery: return 'herdr-recovery';
     case NativeRuntimeDiagnosticOperation.TerminalAttach: return 'terminal-attach';
     case NativeRuntimeDiagnosticOperation.TerminalRecovery: return 'terminal-recovery';
+    case NativeRuntimeDiagnosticOperation.SshShellRecovery: return 'ssh-shell-recovery';
     case NativeRuntimeDiagnosticOperation.EventStreamRecovery: return 'event-stream-recovery';
   }
 }
@@ -1562,9 +1570,11 @@ function runtimeDiagnostic(value: NativeRuntimeDiagnostic): RuntimeDiagnostic {
     operation: runtimeDiagnosticOperation(value.operation),
     durationMs: value.durationMs,
     transportDurationMs: value.transportDurationMs,
-    outcome: value.outcome === NativeRuntimeDiagnosticOutcome.Succeeded
-      ? 'succeeded'
-      : 'failed',
+    outcome: value.outcome === NativeRuntimeDiagnosticOutcome.Started
+      ? 'started'
+      : value.outcome === NativeRuntimeDiagnosticOutcome.Succeeded
+        ? 'succeeded'
+        : 'failed',
     terminalId: value.terminalId,
     error: value.error,
   };

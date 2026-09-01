@@ -41,10 +41,11 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     FatalError: 'FatalError',
   },
   RuntimeDiagnosticOperation: {
-    SshConnect: 0, SshReconnect: 1, HostLatencyProbe: 2, HerdrRequest: 3,
-    TerminalAttach: 4, TerminalRecovery: 5, EventStreamRecovery: 6,
+    SshConnect: 0, SshReconnect: 1, SshReconnectFast: 2, SshReconnectPersistent: 3,
+    HostLatencyProbe: 4, HerdrRequest: 5, HerdrRecovery: 6, TerminalAttach: 7,
+    TerminalRecovery: 8, SshShellRecovery: 9, EventStreamRecovery: 10,
   },
-  RuntimeDiagnosticOutcome: { Succeeded: 0, Failed: 1 },
+  RuntimeDiagnosticOutcome: { Succeeded: 0, Failed: 1, Started: 2 },
   HerdrControlRequest: {
     WorkspaceFocus: { new: jest.fn(inner => ({ tag: 'WorkspaceFocus', inner })) },
     AgentFocus: { new: jest.fn(inner => ({ tag: 'AgentFocus', inner })) },

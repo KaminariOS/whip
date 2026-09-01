@@ -24,19 +24,25 @@ pub(super) fn set_monitoring_state(
     hosts_visible: bool,
     access_locked: bool,
 ) {
-    let start_worker = {
+    let (start_worker, became_active) = {
         let mut monitoring = inner.monitoring.lock();
+        let became_active = app_active && !monitoring.app_active;
         monitoring.app_active = app_active;
         monitoring.hosts_visible = hosts_visible;
         monitoring.access_locked = access_locked;
-        if monitoring.worker_running {
+        let start_worker = if monitoring.worker_running {
             false
         } else {
             monitoring.worker_running = true;
             true
-        }
+        };
+        drop(monitoring);
+        (start_worker, became_active)
     };
-    inner.monitoring_changed.notify_one();
+    inner.monitoring_changed.notify_waiters();
+    if became_active {
+        inner.reconnect_wakeup.notify_one();
+    }
     if !start_worker {
         return;
     }

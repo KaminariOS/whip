@@ -335,14 +335,14 @@ pub(super) async fn wait_for_ssh_shell_open(
 ) -> Result<(), HostRuntimeError> {
     loop {
         let notified = inner.terminal_settled.notified();
-        let (shell_epoch, shell_state) = {
+        let (shell_epoch, shell_state, retry_running) = {
             let state = inner.state.lock();
             let shell = state.ssh_shells.get(terminal_id).ok_or_else(|| {
                 HostRuntimeError::StaleOperation(format!(
                     "SSH shell {terminal_id} was closed while opening"
                 ))
             })?;
-            let result = (shell.operation_epoch, shell.state);
+            let result = (shell.operation_epoch, shell.state, shell.retry_running);
             drop(state);
             result
         };
@@ -354,6 +354,7 @@ pub(super) async fn wait_for_ssh_shell_open(
         let should_wait = match shell_state {
             HostTerminalState::Attached => false,
             HostTerminalState::Opening | HostTerminalState::Restoring => true,
+            HostTerminalState::Failed if retry_running => true,
             HostTerminalState::Failed => {
                 return Err(HostRuntimeError::TerminalUnavailable(format!(
                     "SSH shell {terminal_id} failed to open"
@@ -369,6 +370,242 @@ pub(super) async fn wait_for_ssh_shell_open(
             return Ok(());
         }
         notified.await;
+    }
+}
+
+pub(super) fn ssh_shell_closed(
+    inner: Arc<RuntimeInner>,
+    terminal_id: String,
+    generation: u64,
+    operation_epoch: u64,
+    close: SshShellClose,
+) {
+    let reason = close.reason().to_owned();
+    let transport_lost = matches!(close, SshShellClose::TransportDisconnected(_));
+    let disposition = {
+        let mut state = inner.state.lock();
+        apply_ssh_shell_close(&mut state, &terminal_id, operation_epoch, transport_lost)
+    };
+    if disposition == SshShellCloseDisposition::Ignored {
+        return;
+    }
+    inner.terminal_settled.notify_waiters();
+    if disposition == SshShellCloseDisposition::Restore {
+        emit(HostRuntimeEvent::TerminalStateChanged {
+            runtime_id: inner.id.clone(),
+            terminal_id,
+            state: HostTerminalState::Restoring,
+            reconnect_attempt: 0,
+            retrying: true,
+            error: Some(reason.clone()),
+        });
+        begin_reconnect_for_generation(inner, Some(generation), reason, true);
+    } else {
+        emit(HostRuntimeEvent::SshShellClosed {
+            runtime_id: inner.id.clone(),
+            terminal_id,
+            reason,
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SshShellCloseDisposition {
+    Ignored,
+    Restore,
+    Closed,
+}
+
+pub(super) fn apply_ssh_shell_close(
+    state: &mut RuntimeState,
+    terminal_id: &str,
+    operation_epoch: u64,
+    transport_lost: bool,
+) -> SshShellCloseDisposition {
+    let Some(shell) = state.ssh_shells.get_mut(terminal_id) else {
+        return SshShellCloseDisposition::Ignored;
+    };
+    if shell.operation_epoch != operation_epoch {
+        return SshShellCloseDisposition::Ignored;
+    }
+    shell.dispatched_geometry = None;
+    shell.retry_running = false;
+    if transport_lost && shell.desired_open {
+        shell.state = HostTerminalState::Restoring;
+        SshShellCloseDisposition::Restore
+    } else {
+        shell.desired_open = false;
+        shell.state = HostTerminalState::Closed;
+        SshShellCloseDisposition::Closed
+    }
+}
+
+pub(super) fn ssh_shell_open_is_current(
+    state: &RuntimeState,
+    terminal_id: &str,
+    epoch: u64,
+    generation: u64,
+    operation_epoch: u64,
+) -> bool {
+    state.epoch == epoch
+        && state.generation == generation
+        && state.connection == HostConnectionState::Connected
+        && state.ssh_shells.get(terminal_id).is_some_and(|shell| {
+            shell.desired_open
+                && shell.operation_epoch == operation_epoch
+                && matches!(
+                    shell.state,
+                    HostTerminalState::Opening | HostTerminalState::Restoring
+                )
+        })
+}
+
+pub(super) async fn open_ssh_shell_inner(
+    inner: Arc<RuntimeInner>,
+    terminal_id: String,
+    epoch: u64,
+    generation: u64,
+    operation_epoch: u64,
+    geometry: HostTerminalGeometry,
+    restoring: bool,
+) -> Result<(), HostRuntimeError> {
+    let started_at = Instant::now();
+    let operation = if restoring {
+        RuntimeDiagnosticOperation::SshShellRecovery
+    } else {
+        RuntimeDiagnosticOperation::TerminalAttach
+    };
+    let ssh = current_ssh(&inner)?;
+    let runtime_id = inner.id.clone();
+    let data_terminal_id = terminal_id.clone();
+    let data_inner = Arc::downgrade(&inner);
+    let data = Arc::new(move |bytes| {
+        let Some(inner) = data_inner.upgrade() else {
+            return;
+        };
+        let current = {
+            let state = inner.state.lock();
+            state.epoch == epoch
+                && state.generation == generation
+                && state.connection == HostConnectionState::Connected
+                && state
+                    .ssh_shells
+                    .get(&data_terminal_id)
+                    .is_some_and(|shell| {
+                        shell.desired_open
+                            && shell.operation_epoch == operation_epoch
+                            && matches!(
+                                shell.state,
+                                HostTerminalState::Opening
+                                    | HostTerminalState::Attached
+                                    | HostTerminalState::Restoring
+                            )
+                    })
+        };
+        if current {
+            emit(HostRuntimeEvent::SshShellData {
+                runtime_id: runtime_id.clone(),
+                terminal_id: data_terminal_id.clone(),
+                bytes,
+            });
+        }
+    });
+    let closed_terminal_id = terminal_id.clone();
+    let closed_inner = Arc::downgrade(&inner);
+    let closed = Arc::new(move |close| {
+        if let Some(inner) = closed_inner.upgrade() {
+            ssh_shell_closed(
+                inner,
+                closed_terminal_id.clone(),
+                generation,
+                operation_epoch,
+                close,
+            );
+        }
+    });
+    let result = ssh
+        .open_shell(
+            &terminal_id,
+            "xterm-256color",
+            geometry.columns,
+            geometry.rows,
+            data,
+            closed,
+        )
+        .await;
+    match result {
+        Ok(()) => {
+            let latest_geometry = {
+                let mut state = inner.state.lock();
+                if !ssh_shell_open_is_current(
+                    &state,
+                    &terminal_id,
+                    epoch,
+                    generation,
+                    operation_epoch,
+                ) {
+                    None
+                } else if let Some(shell) = state.ssh_shells.get_mut(&terminal_id) {
+                    shell.state = HostTerminalState::Attached;
+                    shell.dispatched_geometry = Some(geometry);
+                    shell.reconnect_attempt = 0;
+                    shell.retry_running = false;
+                    Some(shell.geometry)
+                } else {
+                    None
+                }
+            };
+            let Some(latest_geometry) = latest_geometry else {
+                let _ = ssh.close_shell(&terminal_id);
+                inner.terminal_settled.notify_waiters();
+                return Err(HostRuntimeError::StaleOperation(format!(
+                    "SSH shell {terminal_id} opened after its connection was replaced"
+                )));
+            };
+            if latest_geometry != geometry {
+                ssh.resize_shell(&terminal_id, latest_geometry.columns, latest_geometry.rows)?;
+                if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
+                    && shell.operation_epoch == operation_epoch
+                    && shell.state == HostTerminalState::Attached
+                {
+                    shell.dispatched_geometry = Some(latest_geometry);
+                }
+            }
+            emit(HostRuntimeEvent::TerminalStateChanged {
+                runtime_id: inner.id.clone(),
+                terminal_id: terminal_id.clone(),
+                state: HostTerminalState::Attached,
+                reconnect_attempt: 0,
+                retrying: false,
+                error: None,
+            });
+            emit_diagnostic(&inner, operation, started_at, None, Some(terminal_id), None);
+            inner.terminal_settled.notify_waiters();
+            Ok(())
+        }
+        Err(error) => {
+            if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
+                && shell.desired_open
+                && shell.operation_epoch == operation_epoch
+            {
+                shell.state = HostTerminalState::Failed;
+                shell.dispatched_geometry = None;
+                if !restoring {
+                    shell.retry_running = false;
+                }
+            }
+            let error = HostRuntimeError::from(error);
+            emit_diagnostic(
+                &inner,
+                operation,
+                started_at,
+                None,
+                Some(terminal_id.clone()),
+                Some(error.to_string()),
+            );
+            inner.terminal_settled.notify_waiters();
+            Err(error)
+        }
     }
 }
 
@@ -443,6 +680,63 @@ pub(super) async fn open_terminal_with_retry(
     Err(error)
 }
 
+pub(super) async fn restore_ssh_shells(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
+    let (generation, shells) = {
+        let mut state = inner.state.lock();
+        let generation = state.generation;
+        let shells = state
+            .ssh_shells
+            .iter_mut()
+            .filter_map(|(id, shell)| {
+                if !shell.desired_open {
+                    return None;
+                }
+                shell.state = HostTerminalState::Restoring;
+                shell.dispatched_geometry = None;
+                shell.reconnect_attempt = 0;
+                shell.retry_running = true;
+                Some((id.clone(), shell.operation_epoch, shell.geometry))
+            })
+            .collect::<Vec<_>>();
+        drop(state);
+        (generation, shells)
+    };
+    let mut restored = 0;
+    for (terminal_id, operation_epoch, geometry) in shells {
+        emit(HostRuntimeEvent::TerminalStateChanged {
+            runtime_id: inner.id.clone(),
+            terminal_id: terminal_id.clone(),
+            state: HostTerminalState::Restoring,
+            reconnect_attempt: 0,
+            retrying: true,
+            error: None,
+        });
+        match open_ssh_shell_inner(
+            inner.clone(),
+            terminal_id.clone(),
+            epoch,
+            generation,
+            operation_epoch,
+            geometry,
+            true,
+        )
+        .await
+        {
+            Ok(()) => restored += 1,
+            Err(HostRuntimeError::StaleOperation(_)) => {}
+            Err(error) => {
+                if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
+                    && shell.operation_epoch == operation_epoch
+                {
+                    shell.retry_running = false;
+                }
+                schedule_ssh_shell_retry(inner.clone(), terminal_id, error.to_string());
+            }
+        }
+    }
+    restored
+}
+
 pub(super) async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u32 {
     let event_requested = inner.state.lock().event.is_some();
     if event_requested {
@@ -455,6 +749,9 @@ pub(super) async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u
             schedule_event_retry(inner.clone(), error.to_string());
         }
     }
+    // Direct shells depend only on SSH, so do not delay them behind Herdr
+    // readiness or terminal-bridge recovery.
+    let mut restored = restore_ssh_shells(inner.clone(), epoch).await;
     let terminals = {
         let mut state = inner.state.lock();
         state
@@ -473,7 +770,6 @@ pub(super) async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u
             })
             .collect::<Vec<_>>()
     };
-    let mut restored = 0;
     for (terminal_id, operation_epoch) in terminals {
         emit(HostRuntimeEvent::TerminalStateChanged {
             runtime_id: inner.id.clone(),
@@ -499,6 +795,144 @@ pub(super) async fn restore_resources(inner: Arc<RuntimeInner>, epoch: u64) -> u
         }
     }
     restored
+}
+
+pub(super) fn schedule_ssh_shell_retry(
+    inner: Arc<RuntimeInner>,
+    terminal_id: String,
+    reason: String,
+) {
+    let (epoch, generation, operation_epoch, start_worker) = {
+        let mut state = inner.state.lock();
+        let epoch = state.epoch;
+        let generation = state.generation;
+        let connected = state.connection == HostConnectionState::Connected;
+        let explicit_disconnect = state.explicit_disconnect;
+        let Some(shell) = state.ssh_shells.get_mut(&terminal_id) else {
+            return;
+        };
+        if !connected || explicit_disconnect || !shell.desired_open {
+            return;
+        }
+        shell.state = HostTerminalState::Failed;
+        let start_worker = !shell.retry_running;
+        if start_worker {
+            shell.retry_running = true;
+            shell.reconnect_attempt = 0;
+        }
+        let operation_epoch = shell.operation_epoch;
+        drop(state);
+        (epoch, generation, operation_epoch, start_worker)
+    };
+    emit(HostRuntimeEvent::TerminalStateChanged {
+        runtime_id: inner.id.clone(),
+        terminal_id: terminal_id.clone(),
+        state: HostTerminalState::Failed,
+        reconnect_attempt: 0,
+        retrying: true,
+        error: Some(format!("SSH shell restore failed: {reason}")),
+    });
+    if !start_worker {
+        return;
+    }
+    if let Ok(runtime) = crate::runtime() {
+        runtime.spawn(async move {
+            let mut cancellation = inner.cancellation.subscribe();
+            let mut last_error = reason;
+            for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
+                let delay_ms = reconnect_delay(attempt, runtime_jitter(&inner, attempt));
+                {
+                    let mut state = inner.state.lock();
+                    let valid_host = state.epoch == epoch
+                        && state.generation == generation
+                        && state.connection == HostConnectionState::Connected
+                        && !state.explicit_disconnect;
+                    let Some(shell) = state.ssh_shells.get_mut(&terminal_id) else {
+                        return;
+                    };
+                    if !valid_host
+                        || !shell.desired_open
+                        || shell.operation_epoch != operation_epoch
+                    {
+                        return;
+                    }
+                    shell.state = HostTerminalState::Restoring;
+                    shell.reconnect_attempt = attempt;
+                    shell.dispatched_geometry = None;
+                    drop(state);
+                }
+                emit(HostRuntimeEvent::TerminalStateChanged {
+                    runtime_id: inner.id.clone(),
+                    terminal_id: terminal_id.clone(),
+                    state: HostTerminalState::Restoring,
+                    reconnect_attempt: attempt,
+                    retrying: true,
+                    error: Some(last_error.clone()),
+                });
+                tokio::select! {
+                    () = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
+                    changed = cancellation.changed() => {
+                        let _ = changed;
+                        return;
+                    }
+                }
+                let geometry = {
+                    let state = inner.state.lock();
+                    if state.epoch != epoch
+                        || state.generation != generation
+                        || state.connection != HostConnectionState::Connected
+                        || state.explicit_disconnect
+                    {
+                        return;
+                    }
+                    let Some(shell) = state.ssh_shells.get(&terminal_id) else {
+                        return;
+                    };
+                    if !shell.desired_open || shell.operation_epoch != operation_epoch {
+                        return;
+                    }
+                    let geometry = shell.geometry;
+                    drop(state);
+                    geometry
+                };
+                match open_ssh_shell_inner(
+                    inner.clone(),
+                    terminal_id.clone(),
+                    epoch,
+                    generation,
+                    operation_epoch,
+                    geometry,
+                    true,
+                )
+                .await
+                {
+                    Ok(()) | Err(HostRuntimeError::StaleOperation(_)) => return,
+                    Err(error) => last_error = error.to_string(),
+                }
+            }
+            let retry_state = {
+                let mut state = inner.state.lock();
+                state.ssh_shells.get_mut(&terminal_id).and_then(|shell| {
+                    (shell.desired_open && shell.operation_epoch == operation_epoch).then(|| {
+                        shell.state = HostTerminalState::Failed;
+                        shell.retry_running = false;
+                        shell.reconnect_attempt = MAX_RECONNECT_ATTEMPTS;
+                    })
+                })
+            };
+            if retry_state.is_some() {
+                inner.terminal_settled.notify_waiters();
+                emit(HostRuntimeEvent::TerminalStateChanged {
+                    runtime_id: inner.id.clone(),
+                    terminal_id,
+                    state: HostTerminalState::Failed,
+                    reconnect_attempt: MAX_RECONNECT_ATTEMPTS,
+                    retrying: false,
+                    error: Some(format!("SSH shell recovery exhausted: {last_error}")),
+                });
+            }
+        });
+    }
 }
 
 pub(super) fn schedule_terminal_retry(
@@ -944,7 +1378,7 @@ impl HostRuntime {
             .spawn(async move {
                 let requested_geometry =
                     HostTerminalGeometry::normalized(columns, rows, cell_width_px, cell_height_px);
-                let (epoch, operation_epoch, geometry, wait_for_existing) = {
+                let (epoch, generation, operation_epoch, geometry, wait_for_existing) = {
                     let mut state = inner.state.lock();
                     if state.connection != HostConnectionState::Connected {
                         return Err(HostRuntimeError::RuntimeDisconnected(
@@ -952,11 +1386,11 @@ impl HostRuntime {
                         ));
                     }
                     let epoch = state.epoch;
-                    let shell_is_live = state
-                        .ssh_shells
-                        .get(&terminal_id)
-                        .is_some_and(|shell| shell.state == HostTerminalState::Attached)
-                        && current_ssh(&inner).is_ok_and(|ssh| ssh.has_shell(&terminal_id));
+                    let generation = state.generation;
+                    let shell_is_live = state.ssh_shells.get(&terminal_id).is_some_and(|shell| {
+                        shell.desired_open && shell.state == HostTerminalState::Attached
+                    }) && current_ssh(&inner)
+                        .is_ok_and(|ssh| ssh.has_shell(&terminal_id));
                     if shell_is_live {
                         return Ok(());
                     }
@@ -964,19 +1398,41 @@ impl HostRuntime {
                         .ssh_shells
                         .entry(terminal_id.clone())
                         .or_insert_with(|| SshShellRuntime {
+                            desired_open: true,
                             state: HostTerminalState::Closed,
                             geometry: requested_geometry,
                             dispatched_geometry: None,
                             operation_epoch: 0,
+                            reconnect_attempt: 0,
+                            retry_running: false,
                         });
+                    shell.desired_open = true;
                     shell.geometry = requested_geometry;
-                    let result = if shell.state == HostTerminalState::Opening {
-                        (epoch, shell.operation_epoch, shell.geometry, true)
+                    let result = if matches!(
+                        shell.state,
+                        HostTerminalState::Opening | HostTerminalState::Restoring
+                    ) || shell.retry_running
+                    {
+                        (
+                            epoch,
+                            generation,
+                            shell.operation_epoch,
+                            shell.geometry,
+                            true,
+                        )
                     } else {
                         shell.operation_epoch = shell.operation_epoch.wrapping_add(1);
                         shell.state = HostTerminalState::Opening;
                         shell.dispatched_geometry = None;
-                        (epoch, shell.operation_epoch, shell.geometry, false)
+                        shell.reconnect_attempt = 0;
+                        shell.retry_running = true;
+                        (
+                            epoch,
+                            generation,
+                            shell.operation_epoch,
+                            shell.geometry,
+                            false,
+                        )
                     };
                     drop(state);
                     result
@@ -984,108 +1440,16 @@ impl HostRuntime {
                 if wait_for_existing {
                     return wait_for_ssh_shell_open(&inner, &terminal_id, operation_epoch).await;
                 }
-                let ssh = current_ssh(&inner)?;
-                let runtime_id = inner.id.clone();
-                let data_terminal_id = terminal_id.clone();
-                let data = Arc::new(move |bytes| {
-                    emit(HostRuntimeEvent::SshShellData {
-                        runtime_id: runtime_id.clone(),
-                        terminal_id: data_terminal_id.clone(),
-                        bytes,
-                    });
-                });
-                let runtime_id = inner.id.clone();
-                let closed_terminal_id = terminal_id.clone();
-                let closed_inner = Arc::downgrade(&inner);
-                let closed = Arc::new(move |reason| {
-                    let Some(inner) = closed_inner.upgrade() else {
-                        return;
-                    };
-                    {
-                        let mut state = inner.state.lock();
-                        let Some(shell) = state.ssh_shells.get_mut(&closed_terminal_id) else {
-                            return;
-                        };
-                        if shell.operation_epoch != operation_epoch {
-                            return;
-                        }
-                        shell.state = HostTerminalState::Closed;
-                        shell.dispatched_geometry = None;
-                        drop(state);
-                    }
-                    inner.terminal_settled.notify_waiters();
-                    emit(HostRuntimeEvent::SshShellClosed {
-                        runtime_id: runtime_id.clone(),
-                        terminal_id: closed_terminal_id.clone(),
-                        reason,
-                    });
-                });
-                let result = ssh
-                    .open_shell(
-                        &terminal_id,
-                        "xterm-256color",
-                        geometry.columns,
-                        geometry.rows,
-                        data,
-                        closed,
-                    )
-                    .await;
-                match result {
-                    Ok(()) => {
-                        let latest_geometry = {
-                            let mut state = inner.state.lock();
-                            let stale = state.epoch != epoch
-                                || state.connection != HostConnectionState::Connected
-                                || state.ssh_shells.get(&terminal_id).is_none_or(|shell| {
-                                    shell.operation_epoch != operation_epoch
-                                        || shell.state != HostTerminalState::Opening
-                                });
-                            let result = if stale {
-                                None
-                            } else if let Some(shell) = state.ssh_shells.get_mut(&terminal_id) {
-                                shell.state = HostTerminalState::Attached;
-                                shell.dispatched_geometry = Some(geometry);
-                                Some(shell.geometry)
-                            } else {
-                                None
-                            };
-                            drop(state);
-                            result
-                        };
-                        let Some(latest_geometry) = latest_geometry else {
-                            let _ = ssh.close_shell(&terminal_id);
-                            inner.terminal_settled.notify_waiters();
-                            return Err(HostRuntimeError::StaleOperation(format!(
-                                "SSH shell {terminal_id} opened after its connection was replaced"
-                            )));
-                        };
-                        if latest_geometry != geometry {
-                            ssh.resize_shell(
-                                &terminal_id,
-                                latest_geometry.columns,
-                                latest_geometry.rows,
-                            )?;
-                            if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
-                                && shell.operation_epoch == operation_epoch
-                                && shell.state == HostTerminalState::Attached
-                            {
-                                shell.dispatched_geometry = Some(latest_geometry);
-                            }
-                        }
-                        inner.terminal_settled.notify_waiters();
-                        Ok(())
-                    }
-                    Err(error) => {
-                        if let Some(shell) = inner.state.lock().ssh_shells.get_mut(&terminal_id)
-                            && shell.operation_epoch == operation_epoch
-                        {
-                            shell.state = HostTerminalState::Failed;
-                            shell.dispatched_geometry = None;
-                        }
-                        inner.terminal_settled.notify_waiters();
-                        Err(error.into())
-                    }
-                }
+                open_ssh_shell_inner(
+                    inner.clone(),
+                    terminal_id,
+                    epoch,
+                    generation,
+                    operation_epoch,
+                    geometry,
+                    false,
+                )
+                .await
             })
             .await
             .map_err(|error| {
@@ -1121,10 +1485,13 @@ impl HostRuntime {
                 .ssh_shells
                 .entry(terminal_id.clone())
                 .or_insert_with(|| SshShellRuntime {
+                    desired_open: false,
                     state: HostTerminalState::Closed,
                     geometry,
                     dispatched_geometry: None,
                     operation_epoch: 0,
+                    reconnect_attempt: 0,
+                    retry_running: false,
                 });
             shell.geometry = geometry;
             let result = (

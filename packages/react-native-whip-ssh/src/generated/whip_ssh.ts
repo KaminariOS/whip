@@ -8048,10 +8048,14 @@ const FfiConverterTypeRemoteDirectoryListing = (() => {
 export enum RuntimeDiagnosticOperation {
   SshConnect,
   SshReconnect,
+  SshReconnectFast,
+  SshReconnectPersistent,
   HostLatencyProbe,
   HerdrRequest,
+  HerdrRecovery,
   TerminalAttach,
   TerminalRecovery,
+  SshShellRecovery,
   EventStreamRecovery,
 }
 
@@ -8066,14 +8070,22 @@ const FfiConverterTypeRuntimeDiagnosticOperation = (() => {
         case 2:
           return RuntimeDiagnosticOperation.SshReconnect;
         case 3:
-          return RuntimeDiagnosticOperation.HostLatencyProbe;
+          return RuntimeDiagnosticOperation.SshReconnectFast;
         case 4:
-          return RuntimeDiagnosticOperation.HerdrRequest;
+          return RuntimeDiagnosticOperation.SshReconnectPersistent;
         case 5:
-          return RuntimeDiagnosticOperation.TerminalAttach;
+          return RuntimeDiagnosticOperation.HostLatencyProbe;
         case 6:
-          return RuntimeDiagnosticOperation.TerminalRecovery;
+          return RuntimeDiagnosticOperation.HerdrRequest;
         case 7:
+          return RuntimeDiagnosticOperation.HerdrRecovery;
+        case 8:
+          return RuntimeDiagnosticOperation.TerminalAttach;
+        case 9:
+          return RuntimeDiagnosticOperation.TerminalRecovery;
+        case 10:
+          return RuntimeDiagnosticOperation.SshShellRecovery;
+        case 11:
           return RuntimeDiagnosticOperation.EventStreamRecovery;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -8085,16 +8097,24 @@ const FfiConverterTypeRuntimeDiagnosticOperation = (() => {
           return ordinalConverter.write(1, into);
         case RuntimeDiagnosticOperation.SshReconnect:
           return ordinalConverter.write(2, into);
-        case RuntimeDiagnosticOperation.HostLatencyProbe:
+        case RuntimeDiagnosticOperation.SshReconnectFast:
           return ordinalConverter.write(3, into);
-        case RuntimeDiagnosticOperation.HerdrRequest:
+        case RuntimeDiagnosticOperation.SshReconnectPersistent:
           return ordinalConverter.write(4, into);
-        case RuntimeDiagnosticOperation.TerminalAttach:
+        case RuntimeDiagnosticOperation.HostLatencyProbe:
           return ordinalConverter.write(5, into);
-        case RuntimeDiagnosticOperation.TerminalRecovery:
+        case RuntimeDiagnosticOperation.HerdrRequest:
           return ordinalConverter.write(6, into);
-        case RuntimeDiagnosticOperation.EventStreamRecovery:
+        case RuntimeDiagnosticOperation.HerdrRecovery:
           return ordinalConverter.write(7, into);
+        case RuntimeDiagnosticOperation.TerminalAttach:
+          return ordinalConverter.write(8, into);
+        case RuntimeDiagnosticOperation.TerminalRecovery:
+          return ordinalConverter.write(9, into);
+        case RuntimeDiagnosticOperation.SshShellRecovery:
+          return ordinalConverter.write(10, into);
+        case RuntimeDiagnosticOperation.EventStreamRecovery:
+          return ordinalConverter.write(11, into);
       }
     }
     allocationSize(value: TypeName): number {
@@ -8107,6 +8127,7 @@ const FfiConverterTypeRuntimeDiagnosticOperation = (() => {
 export enum RuntimeDiagnosticOutcome {
   Succeeded,
   Failed,
+  Started,
 }
 
 const FfiConverterTypeRuntimeDiagnosticOutcome = (() => {
@@ -8119,6 +8140,8 @@ const FfiConverterTypeRuntimeDiagnosticOutcome = (() => {
           return RuntimeDiagnosticOutcome.Succeeded;
         case 2:
           return RuntimeDiagnosticOutcome.Failed;
+        case 3:
+          return RuntimeDiagnosticOutcome.Started;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -8129,6 +8152,8 @@ const FfiConverterTypeRuntimeDiagnosticOutcome = (() => {
           return ordinalConverter.write(1, into);
         case RuntimeDiagnosticOutcome.Failed:
           return ordinalConverter.write(2, into);
+        case RuntimeDiagnosticOutcome.Started:
+          return ordinalConverter.write(3, into);
       }
     }
     allocationSize(value: TypeName): number {
