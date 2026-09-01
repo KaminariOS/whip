@@ -1,5 +1,5 @@
 import Slider from '@react-native-community/slider';
-import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import { BellRing, Check, ChevronDown, ChevronRight, ChevronUp, Fingerprint, History, ImagePlus, Info, KeyRound, Minus, Play, Plus, Trash2, X, type LucideIcon } from 'lucide-react-native';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Clipboard, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, ToastAndroid, View } from 'react-native';
 import Animated, {
@@ -101,6 +101,7 @@ export function SettingsDetailsProvider({ children }: { children: ReactNode }) {
 
 export interface SettingsSectionProps {
   alertsEnabled: boolean;
+  backgroundMonitoringAvailable: boolean;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   biometricForKeys: boolean;
@@ -123,6 +124,7 @@ export interface SettingsSectionProps {
   agentCommand: string;
   terminalHistory: readonly string[];
   onAlertsChange: (value: boolean) => void;
+  onStartBackgroundMonitoring: () => Promise<void>;
   onPersistentAlertDurationChange: (value: number) => void;
   onTestPersistentAlert: () => void;
   onTtsChange: (value: boolean) => void;
@@ -236,6 +238,14 @@ export function SettingsSection(props: SettingsSectionProps) {
             MAX_PERSISTENT_ALERT_DURATION_SECONDS,
             props.persistentAlertDurationSeconds + PERSISTENT_ALERT_DURATION_STEP_SECONDS,
           ))}
+          divided
+        /> : null}
+        {Platform.OS === 'android' ? <ActionRow
+          title={t('settings.startForegroundService')}
+          copy={t('settings.startForegroundServiceCopy')}
+          icon={Play}
+          disabled={!props.backgroundMonitoringAvailable}
+          onPress={props.onStartBackgroundMonitoring}
           divided
         /> : null}
         {Platform.OS !== 'web' ? <ActionRow
@@ -1108,9 +1118,9 @@ function RancherBadge() {
   return <View className="rounded-full bg-primary/15 px-2 py-1"><Text className="text-[10px] font-semibold text-primary">{t('membership.rancher')}</Text></View>;
 }
 
-function ActionRow({ title, copy, icon, value, onPress, divided = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean }) {
+function ActionRow({ title, copy, icon, value, onPress, divided = false, disabled = false }: { title: string; copy: string; icon: LucideIcon; value?: string; onPress: () => void | Promise<void>; divided?: boolean; disabled?: boolean }) {
   return (
-    <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(onPress)}>
+    <Button className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} disabled={disabled} size="content" variant="ghost" onPress={hapticPress(onPress)}>
       <View className="size-10 items-center justify-center rounded-full bg-primary/10"><Icon as={icon} className="text-primary" size={18} /></View>
       <View className="ml-3 min-w-0 flex-1"><DetailsTitle title={title} copy={copy} /></View>
       {value ? <Text className="max-w-[90px] text-right text-xs font-semibold text-primary">{value}</Text> : null}

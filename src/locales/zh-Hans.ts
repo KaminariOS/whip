@@ -371,6 +371,8 @@ export const zhHans = {
   'settings.backgroundAlertDuration': '后台警报持续时间',
   'settings.backgroundAlertDurationCopy': '提示：摇动手机可提前关闭它。',
   'settings.seconds': '{{count}} 秒',
+  'settings.startForegroundService': '启动前台服务',
+  'settings.startForegroundServiceCopy': '无需重启 Whip，即可为已连接的主机启动 Android 后台监控。',
   'settings.testPersistentAlert': '测试持续警报',
   'settings.testPersistentAlertCopy': '播放代理事件所使用的相同通知、振动和持续声音。',
   'settings.testPersistentAlertTab': '警报测试',

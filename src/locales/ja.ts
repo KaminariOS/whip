@@ -371,6 +371,8 @@ export const ja = {
   'settings.backgroundAlertDuration': 'バックグラウンド アラートの継続時間',
   'settings.backgroundAlertDurationCopy': 'ヒント: 携帯電話を振って、早めに終了します。',
   'settings.seconds': '{{count}} 秒',
+  'settings.startForegroundService': 'フォアグラウンドサービスを開始',
+  'settings.startForegroundServiceCopy': 'Whip を再起動せずに、接続中のホストの Android バックグラウンド監視を開始します。',
   'settings.testPersistentAlert': '持続アラートをテスト',
   'settings.testPersistentAlertCopy': 'エージェントイベントと同じ通知、バイブレーション、持続音を再生します。',
   'settings.testPersistentAlertTab': 'アラートテスト',

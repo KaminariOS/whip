@@ -31,6 +31,7 @@ import {
   ignoreExpectedCancellation,
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
+import { startBackgroundMonitoring } from '../services/backgroundMonitoring';
 import { useTheme } from '../theme';
 import type { LiveSessionRailItem } from './LiveSessionRail';
 import { AgentStatusAnimationProvider } from './app-ui';
@@ -393,6 +394,9 @@ export function AppShell({
                   >
                     <MoreScreen
                       alertsEnabled={alertsEnabled}
+                      backgroundMonitoringAvailable={
+                        alertsEnabled && sessions.state.sessions.length > 0
+                      }
                       persistentAlertDurationSeconds={
                         persistentAlertDurationSeconds
                       }
@@ -432,6 +436,19 @@ export function AppShell({
                       onAlertsChange={value =>
                         preferences.setPreference('alertsEnabled', value)
                       }
+                      onStartBackgroundMonitoring={async () => {
+                        try {
+                          await startBackgroundMonitoring(
+                            sessions.state.sessions.length,
+                          );
+                        } catch (error) {
+                          hosts.setError(
+                            t('app.backgroundUnavailable', {
+                              error: String(error),
+                            }),
+                          );
+                        }
+                      }}
                       onPersistentAlertDurationChange={value =>
                         preferences.setPreference(
                           'persistentAlertDurationSeconds',

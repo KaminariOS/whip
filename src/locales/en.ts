@@ -382,6 +382,8 @@ export const en = {
   'settings.backgroundAlertDuration': 'Background alert duration',
   'settings.backgroundAlertDurationCopy': 'Tip: shake your phone to dismiss it early.',
   'settings.seconds': '{{count}} sec',
+  'settings.startForegroundService': 'Start foreground service',
+  'settings.startForegroundServiceCopy': 'Start Android background monitoring for connected hosts without restarting Whip.',
   'settings.testPersistentAlert': 'Test persistent alert',
   'settings.testPersistentAlertCopy': 'Play the same notification, vibration, and persistent sound used for an agent event.',
   'settings.testPersistentAlertTab': 'Alert test',

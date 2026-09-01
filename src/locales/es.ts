@@ -371,6 +371,8 @@ export const es = {
   'settings.backgroundAlertDuration': 'Duración de la alerta de fondo',
   'settings.backgroundAlertDurationCopy': 'Consejo: agita tu teléfono para descartarlo antes.',
   'settings.seconds': '{{count}} seg.',
+  'settings.startForegroundService': 'Iniciar servicio en primer plano',
+  'settings.startForegroundServiceCopy': 'Inicia la supervisión en segundo plano de Android para los hosts conectados sin reiniciar Whip.',
   'settings.testPersistentAlert': 'Probar alerta persistente',
   'settings.testPersistentAlertCopy': 'Reproduce la misma notificación, vibración y sonido persistente usados para un evento del agente.',
   'settings.testPersistentAlertTab': 'Prueba de alerta',

@@ -371,6 +371,8 @@ export const zhHant: Record<string, string> = {
   'settings.backgroundAlertDuration': '背景警示持續時間',
   'settings.backgroundAlertDurationCopy': '提示：搖動手機可提前關閉。',
   'settings.seconds': '{{count}} 秒',
+  'settings.startForegroundService': '啟動前景服務',
+  'settings.startForegroundServiceCopy': '無需重新啟動 Whip，即可為已連線的主機啟動 Android 背景監控。',
   'settings.testPersistentAlert': '測試持續警示',
   'settings.testPersistentAlertCopy': '播放代理程式事件所使用的相同通知、震動與持續聲音。',
   'settings.testPersistentAlertTab': '警示測試',
