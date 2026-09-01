@@ -35,6 +35,7 @@
     "@rn-primitives/separator": "^1.5.2",
     "@rn-primitives/slot": "^1.5.2",
     "@rn-primitives/switch": "^1.5.2",
+    "@shopify/flash-list": "2.0.2",
     "@ubjs/core": "0.31.0-3",
     "@xterm/addon-fit": "0.12.0-beta.299",
     "@xterm/addon-image": "0.10.0-beta.299",

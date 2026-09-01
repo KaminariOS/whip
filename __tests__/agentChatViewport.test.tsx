@@ -19,6 +19,17 @@ jest.mock(
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
 jest.mock('react-native-code-highlighter', () => 'CodeHighlighter');
+jest.mock('@shopify/flash-list', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  return {
+    FlashList: React.forwardRef(function FlashListMock(
+      props: Record<string, unknown>,
+      ref: React.ForwardedRef<unknown>,
+    ) {
+      return React.createElement('FlashList', { ...props, ref });
+    }),
+  };
+});
 jest.mock('react-syntax-highlighter/dist/esm/styles/hljs', () => ({
   atomOneDarkReasonable: {},
   atomOneLight: {},
@@ -29,7 +40,6 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
   Clipboard: { setString: jest.fn() },
-  FlatList: 'FlatList',
   Linking: { openURL: jest.fn(async () => undefined) },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
@@ -102,7 +112,7 @@ function chatView(state: AgentChatState) {
 }
 
 function flatList(renderer: ReactTestRenderer): ReactTestInstance {
-  return renderer.root.find(node => String(node.type) === 'FlatList');
+  return renderer.root.find(node => String(node.type) === 'FlashList');
 }
 
 function chatViewport(renderer: ReactTestRenderer): ReactTestInstance {
@@ -212,9 +222,17 @@ describe('AgentChatView viewport insets', () => {
       );
     });
 
-    const list = renderer.root.find(node => String(node.type) === 'FlatList');
+    const list = flatList(renderer);
     expect(list.props.scrollIndicatorInsets).toEqual(CONTENT_INSETS);
-    expect(list.props.contentContainerClassName).toBe('flex-grow px-4');
+    expect(list.props.contentContainerStyle).toEqual({
+      flexGrow: 1,
+      paddingHorizontal: 16,
+    });
+    expect(list.props.maintainVisibleContentPosition).toEqual({
+      startRenderingFromBottom: true,
+    });
+    expect(list.props.onEndReachedThreshold).toBe(0);
+    expect(list.props.estimatedItemSize).toBeUndefined();
 
     act(() => {
       boundaries = create(
@@ -360,14 +378,16 @@ describe('AgentChatView tool output', () => {
 
 describe('AgentChatView auto-follow', () => {
   let renderer: ReactTestRenderer;
+  let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
 
   beforeEach(() => {
+    scrollToEnd = jest.fn();
     scrollToOffset = jest.fn();
     act(() => {
       renderer = create(chatView(chatState([TURN])), {
-        createNodeMock: element => element.type === 'FlatList'
-          ? { scrollToOffset }
+        createNodeMock: element => element.type === 'FlashList'
+          ? { scrollToEnd, scrollToOffset }
           : null,
       });
     });
@@ -387,21 +407,20 @@ describe('AgentChatView auto-follow', () => {
 
   test('starts enabled and follows content-height growth without a new turn', () => {
     establishScrollableContent(renderer);
-    expect(scrollToOffset).toHaveBeenLastCalledWith({ animated: false, offset: 600 });
-    scrollToOffset.mockClear();
+    expect(scrollToEnd).not.toHaveBeenCalled();
 
     act(() => {
       renderer.update(chatView(chatState([{ ...TURN, startedAt: 1 }])));
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
 
-    expect(scrollToOffset).toHaveBeenCalledTimes(1);
-    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 700 });
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(scrollToOffset).not.toHaveBeenCalled();
   });
 
   test('keeps following when the user drags against the current end', () => {
     establishScrollableContent(renderer);
-    scrollToOffset.mockClear();
 
     act(() => {
       flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
@@ -415,12 +434,11 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
-    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 700 });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
   });
 
   test('stops following user scroll-up and resumes after the user returns near the end', () => {
     establishScrollableContent(renderer);
-    scrollToOffset.mockClear();
 
     act(() => {
       flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
@@ -433,7 +451,7 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
-    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(scrollToEnd).not.toHaveBeenCalled();
 
     act(() => {
       flatList(renderer).props.onScroll(scrollEvent(650, 1_100));
@@ -445,16 +463,16 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_200);
     });
-    expect(scrollToOffset).toHaveBeenCalledTimes(1);
-    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 800 });
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
 
-    scrollToOffset.mockClear();
+    scrollToEnd.mockClear();
     act(() => {
       flatList(renderer).props.onScroll(scrollEvent(800, 1_200));
       flatList(renderer).props.onScroll(scrollEvent(750, 1_200));
       flatList(renderer).props.onContentSizeChange(0, 1_300);
     });
-    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(scrollToEnd).not.toHaveBeenCalled();
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(1);
@@ -466,7 +484,6 @@ describe('AgentChatView auto-follow', () => {
       flatList(renderer).props.onScrollBeginDrag(scrollEvent(600, 1_000));
       flatList(renderer).props.onScroll(scrollEvent(400, 1_000));
     });
-    scrollToOffset.mockClear();
 
     const latestButton = renderer.root.find(
       node => node.props.accessibilityLabel === 'Jump to latest',
@@ -474,12 +491,12 @@ describe('AgentChatView auto-follow', () => {
     act(() => {
       latestButton.props.onPress();
     });
-    expect(scrollToOffset).toHaveBeenCalledWith({ animated: true, offset: 600 });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(0);
 
-    scrollToOffset.mockClear();
+    scrollToEnd.mockClear();
     act(() => {
       flatList(renderer).props.onMomentumScrollBegin();
       flatList(renderer).props.onScroll(scrollEvent(450, 1_000));
@@ -487,8 +504,8 @@ describe('AgentChatView auto-follow', () => {
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
 
-    expect(scrollToOffset).toHaveBeenCalledTimes(1);
-    expect(scrollToOffset).toHaveBeenCalledWith({ animated: false, offset: 700 });
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
     expect(renderer.root.findAll(
       node => node.props.accessibilityLabel === 'Jump to latest',
     )).toHaveLength(0);
@@ -501,11 +518,13 @@ describe('AgentChatView initial viewport readiness', () => {
     cancelAnimationFrame: typeof cancelAnimationFrame;
   };
   let renderer: ReactTestRenderer;
+  let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
   let nextFrame: number;
   let frames: Map<number, Parameters<typeof requestAnimationFrame>[0]>;
 
   beforeEach(() => {
+    scrollToEnd = jest.fn();
     scrollToOffset = jest.fn();
     nextFrame = 1;
     frames = new Map();
@@ -546,48 +565,65 @@ describe('AgentChatView initial viewport readiness', () => {
           state={state}
         />,
         {
-          createNodeMock: element => element.type === 'FlatList'
-            ? { scrollToOffset }
+          createNodeMock: element => element.type === 'FlashList'
+            ? { scrollToEnd, scrollToOffset }
             : null,
         },
       );
     });
   };
 
-  test('signals only after outer layout, content measurement, and the initial bottom pass', () => {
-    const onReady = jest.fn();
-    renderChat(chatState([TURN]), onReady);
-
-    act(() => {
-      flatList(renderer).props.onContentSizeChange(0, 1_000);
-    });
-    flushAnimationFrame();
-    flushAnimationFrame();
-    expect(onReady).not.toHaveBeenCalled();
-
+  const layoutAndMeasure = (contentHeight: number) => {
     act(() => {
       chatViewport(renderer).props.onLayout({
         nativeEvent: { layout: { height: 400 } },
       });
+      flatList(renderer).props.onContentSizeChange(0, contentHeight);
     });
-    expect(scrollToOffset).toHaveBeenLastCalledWith({
-      animated: false,
-      offset: 600,
-    });
-    expect(onReady).not.toHaveBeenCalled();
+  };
 
+  const reportViewableTurns = (turns: TranscriptTurn[]) => {
+    act(() => {
+      flatList(renderer).props.onViewableItemsChanged({
+        changed: [],
+        viewableItems: turns.map((turn, index) => ({
+          index,
+          isViewable: true,
+          item: turn,
+          key: turn.id,
+          timestamp: 0,
+        })),
+      });
+    });
+  };
+
+  const reportEndReached = () => {
+    act(() => {
+      flatList(renderer).props.onEndReached();
+    });
+  };
+
+  test('layout, content measurement, and RAFs are insufficient without the latest turn at the end', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([TURN]), onReady);
+
+    layoutAndMeasure(1_000);
+    flushAnimationFrame();
     flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
 
-    act(() => {
-      flatList(renderer).props.onContentSizeChange(0, 1_100);
-    });
-    expect(scrollToOffset).toHaveBeenLastCalledWith({
-      animated: false,
-      offset: 700,
-    });
+    reportViewableTurns([TURN]);
+    flushAnimationFrame();
+    flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
+  });
 
+  test('signals exactly once when FlashList reports the latest turn at the real end', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([TURN]), onReady);
+    layoutAndMeasure(1_000);
+    reportViewableTurns([TURN]);
+    reportEndReached();
     flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
     flushAnimationFrame();
@@ -596,6 +632,71 @@ describe('AgentChatView initial viewport readiness', () => {
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_200);
     });
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('aligns a loaded scrollable bottom-first viewport without waiting for transcript input', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([TURN]), onReady);
+    layoutAndMeasure(1_000);
+
+    act(() => {
+      flatList(renderer).props.onLoad({ elapsedTimeInMs: 10 });
+    });
+
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).not.toHaveBeenCalled();
+
+    reportViewableTurns([TURN]);
+    reportEndReached();
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('requires bottom conditions to remain valid through the final render pass', () => {
+    const onReady = jest.fn();
+    renderChat(chatState([TURN]), onReady);
+    layoutAndMeasure(1_000);
+    reportViewableTurns([TURN]);
+    reportEndReached();
+
+    flushAnimationFrame();
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_100);
+    });
+    flushAnimationFrame();
+    expect(onReady).not.toHaveBeenCalled();
+
+    reportEndReached();
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('a long transcript cannot become ready while only an early turn is viewable', () => {
+    const onReady = jest.fn();
+    const turns = Array.from({ length: 100 }, (_value, index): TranscriptTurn => ({
+      assistants: [],
+      diffs: [],
+      id: `turn-${index}`,
+      status: 'idle',
+    }));
+    renderChat(chatState(turns), onReady);
+    layoutAndMeasure(20_000);
+    reportEndReached();
+
+    reportViewableTurns([turns[0]]);
+    flushAnimationFrame();
+    flushAnimationFrame();
+    expect(onReady).not.toHaveBeenCalled();
+
+    reportViewableTurns([turns[99]]);
     flushAnimationFrame();
     flushAnimationFrame();
     expect(onReady).toHaveBeenCalledTimes(1);
@@ -615,6 +716,7 @@ describe('AgentChatView initial viewport readiness', () => {
     flushAnimationFrame();
 
     expect(onReady).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).not.toHaveBeenCalled();
     expect(scrollToOffset).not.toHaveBeenCalled();
   });
 });

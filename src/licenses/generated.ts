@@ -64,6 +64,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/6ce3a194c8346214.txt"),
   },
   {
+    id: "npm-shopify-flash-list-2-0-2",
+    category: "npm",
+    projectName: "@shopify/flash-list",
+    sourceUrl: "https://github.com/Shopify/flash-list",
+    attribution: "Direct npm dependency · version 2.0.2",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/b471020939ffa8ec.txt"),
+  },
+  {
     id: "npm-ubjs-core-0-31-0-3",
     category: "npm",
     projectName: "@ubjs/core",
