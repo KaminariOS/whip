@@ -103,6 +103,7 @@ jobs:
         run: >-
           nix develop .#default -c
           android/gradlew -p android app:assembleRelease
+          -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
           -PreactNativeArchitectures=arm64-v8a
           --no-daemon
 
