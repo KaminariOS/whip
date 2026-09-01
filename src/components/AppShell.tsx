@@ -26,6 +26,10 @@ import { shouldEnableAppGlass } from '../lib/appGlass';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { hostRuntimeSummary } from '../lib/hostRuntimeSummary';
 import { hostSessionRecoveryState } from '../lib/hostSessionRecovery';
+import {
+  isLiveHostSshConnected,
+  visibleLiveHostLatency,
+} from '../lib/liveHostLatency';
 import { dismissAgentAlertsForTab, alertAgent } from '../services/alerts';
 import {
   ignoreExpectedCancellation,
@@ -247,18 +251,17 @@ export function AppShell({
                         hosts={hosts.hosts}
                         activeHostId={activeSession?.hostId || null}
                         connectedHostIds={sessions.state.sessions
-                          .filter(
-                            session =>
-                              session.status === 'connected' ||
-                              session.status === 'ready',
+                          .filter(session =>
+                            isLiveHostSshConnected(session.status),
                           )
                           .map(session => session.hostId)}
                         latencyMsByHostId={Object.fromEntries(
                           sessions.state.sessions.map(session => [
                             session.hostId,
-                            session.status === 'ready'
-                              ? telemetry.get(session.id).latencyMs
-                              : null,
+                            visibleLiveHostLatency(
+                              session.status,
+                              telemetry.get(session.id).latencyMs,
+                            ),
                           ]),
                         )}
                         runtimeByHostId={Object.fromEntries(
@@ -564,11 +567,10 @@ export function AppShell({
                       session={activeSession}
                       client={sessions.activeClient}
                       visible={terminalVisible}
-                      latencyMs={
-                        activeSession.status === 'ready'
-                          ? activeTelemetry?.latencyMs ?? null
-                          : null
-                      }
+                      latencyMs={visibleLiveHostLatency(
+                        activeSession.status,
+                        activeTelemetry?.latencyMs ?? null,
+                      )}
                       latencyWarningActive={
                         activeSession.status === 'ready' &&
                         Boolean(activeTelemetry?.latencyWarning.active)

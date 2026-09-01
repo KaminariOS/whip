@@ -38,6 +38,10 @@ import {
 import { hostDisplayName } from '../lib/hostProfiles';
 import { isHerdrProtocolMismatch } from '../lib/herdrProtocol';
 import {
+  isLiveHostSshConnected,
+  runtimeStateInvalidatesLiveHostLatency,
+} from '../lib/liveHostLatency';
+import {
   destroyRuntime,
   disposeRuntimeMap,
   savedHostConnectionAction,
@@ -188,11 +192,10 @@ export function useSessionConnectionLifecycle({
       const runtime = runtimesRef.current.get(sessionId);
       if (!runtime) return;
       const session = findLiveHostSession(stateRef.current, sessionId);
-      if (session?.status === 'connected' || session?.status === 'ready') {
+      if (session && isLiveHostSshConnected(session.status)) {
         hosts.markDisconnected(session.hostId);
       }
       if (isHerdrProtocolMismatch(cause)) {
-        clearLatency(sessionId);
         recordNetworkDiagnostic(
           'error',
           'control-reconnect-protocol-mismatch',
@@ -205,7 +208,6 @@ export function useSessionConnectionLifecycle({
         sessionId,
         cause: networkErrorMessage(cause),
       });
-      clearLatency(sessionId);
       runtime.client.reconnectControl(runtime.profile).catch(reconnectError => {
         if (runtimesRef.current.get(sessionId) !== runtime) return;
         recordNetworkDiagnostic('warn', 'control-recovery-native-failed', {
@@ -214,7 +216,7 @@ export function useSessionConnectionLifecycle({
         });
       });
     },
-    [appCoreRef, clearLatency, commitAppCore, hosts, runtimesRef, stateRef],
+    [appCoreRef, commitAppCore, hosts, runtimesRef, stateRef],
   );
 
   const createRuntime = useCallback(
@@ -272,6 +274,9 @@ export function useSessionConnectionLifecycle({
               error: event.error,
             },
           );
+          if (runtimeStateInvalidatesLiveHostLatency(event.state)) {
+            clearLatency(sessionId);
+          }
           if (
             event.state === 'reconnecting'
             || event.state === 'connecting'
@@ -346,6 +351,7 @@ export function useSessionConnectionLifecycle({
     [
       appCoreRef,
       commitAppCore,
+      clearLatency,
       handleAgentStateChange,
       handleLatencyMeasurement,
       handleReconnectRecovered,
