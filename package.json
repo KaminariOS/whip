@@ -79,7 +79,7 @@
     "react-native-purchases": "^10.8.1",
     "react-native-purchases-ui": "^10.8.1",
     "react-native-reanimated": "4.5.1",
-    "react-native-safe-area-context": "~5.7.0",
+    "react-native-safe-area-context": "~5.9.1",
     "react-native-svg": "15.15.4",
     "react-native-webview": "13.16.1",
     "react-native-whip-ssh": "file:packages/react-native-whip-ssh",
