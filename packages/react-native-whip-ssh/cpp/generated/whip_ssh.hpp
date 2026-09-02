@@ -200,15 +200,6 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_agent_transcript(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_close_agent_session(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -216,14 +207,20 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_create_tab_with_launch(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_current_agent_chat(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_detach_agent_chat(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_fn_method_hostruntime_install_agent_integration(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_open_agent_session(
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_open_agent_chat(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_start_agent_chat(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_submit_pastes(
@@ -1127,17 +1124,6 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value
-  cpp_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_session(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
-  jsi::Value
-  cpp_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal(
-      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
-      size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -1146,15 +1132,20 @@ protected:
   cpp_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_current_agent_chat(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_checksum_method_hostruntime_install_agent_integration(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_session(
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
-  jsi::Value
-  cpp_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(
+  jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_chat(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value cpp_uniffi_whip_ssh_checksum_method_hostruntime_submit_pastes(

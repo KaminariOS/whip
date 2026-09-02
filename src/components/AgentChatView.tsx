@@ -52,6 +52,7 @@ import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from '../services/operationalDiagnostics';
+import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
@@ -107,11 +108,9 @@ interface ChatScrollbarDragSnapshot {
 interface InitialViewportReadiness {
   atEnd: boolean;
   contentSizeKnown: boolean;
-  frame: number | null;
   itemsLoaded: boolean;
   measuredLatestTurnId: string | null;
   ready: boolean;
-  revision: number;
   viewableLatestTurnId: string | null;
   viewportLaidOut: boolean;
 }
@@ -811,16 +810,15 @@ export function AgentChatView({
   const initialViewportRef = useRef<InitialViewportReadiness>({
     atEnd: false,
     contentSizeKnown: false,
-    frame: null,
     itemsLoaded: false,
     measuredLatestTurnId: null,
     ready: false,
-    revision: 0,
     viewableLatestTurnId: null,
     viewportLaidOut: false,
   });
   const initialViewportReadyCallbackRef = useRef(onInitialViewportReady);
   initialViewportReadyCallbackRef.current = onInitialViewportReady;
+  const lastInitialViewportDiagnosticRef = useRef('');
   const agentName = agent === 'opencode' ? 'OpenCode' : 'Codex';
   const agentWorking = agentStatus === 'working';
   const contentPadding = insetContentPadding(contentInsets, {
@@ -892,34 +890,46 @@ export function AgentChatView({
       );
   };
 
-  const scheduleInitialViewportReady = () => {
+  const recordInitialViewportReadiness = (source: string) => {
+    const readiness = initialViewportRef.current;
+    const currentLatestTurnId = latestTurnIdRef.current;
+    const geometry = scrollGeometryRef.current;
+    const details = {
+      atEnd: readiness.atEnd,
+      conditionsSatisfied: initialViewportConditionsSatisfied(),
+      contentHeight: Math.round(geometry.contentHeight),
+      contentSizeKnown: readiness.contentSizeKnown,
+      itemsLoaded: readiness.itemsLoaded,
+      latestTurnId: currentLatestTurnId,
+      measuredLatestTurnMatches:
+        readiness.measuredLatestTurnId === currentLatestTurnId,
+      ready: readiness.ready,
+      source,
+      viewableLatestTurnMatches:
+        currentLatestTurnId === null ||
+        readiness.viewableLatestTurnId === currentLatestTurnId,
+      viewportHeight: Math.round(geometry.viewportHeight),
+      viewportLaidOut: readiness.viewportLaidOut,
+    };
+    const fingerprint = JSON.stringify(details);
+    if (lastInitialViewportDiagnosticRef.current === fingerprint) return;
+    lastInitialViewportDiagnosticRef.current = fingerprint;
+    recordAgentChatDiagnostic('viewport-readiness-changed', details);
+  };
+
+  const scheduleInitialViewportReady = (source: string) => {
     const readiness = initialViewportRef.current;
     if (readiness.ready) return;
-    readiness.revision += 1;
-    const revision = readiness.revision;
-    if (readiness.frame !== null) {
-      cancelAnimationFrame(readiness.frame);
-      readiness.frame = null;
-    }
+    recordInitialViewportReadiness(source);
     if (!initialViewportConditionsSatisfied()) return;
-    readiness.frame = requestAnimationFrame(() => {
-      readiness.frame = null;
-      if (
-        readiness.ready
-        || readiness.revision !== revision
-        || !initialViewportConditionsSatisfied()
-      ) return;
-      readiness.frame = requestAnimationFrame(() => {
-        readiness.frame = null;
-        if (
-          readiness.ready
-          || readiness.revision !== revision
-          || !initialViewportConditionsSatisfied()
-        ) return;
-        readiness.ready = true;
-        initialViewportReadyCallbackRef.current?.();
-      });
+    readiness.ready = true;
+    recordInitialViewportReadiness('ready');
+    recordAgentChatDiagnostic('viewport-ready', {
+      latestTurnId: latestTurnIdRef.current,
+      source,
+      turnCount: turns.length,
     });
+    initialViewportReadyCallbackRef.current?.();
   };
 
   const updateInitialEndPosition = (
@@ -928,9 +938,10 @@ export function AgentChatView({
     viewportHeight: number,
   ) => {
     const maximumOffset = Math.max(0, contentHeight - viewportHeight);
-    initialViewportRef.current.atEnd = viewportHeight > 0
-      && maximumOffset - offset <= CHAT_INITIAL_END_THRESHOLD;
-    scheduleInitialViewportReady();
+    initialViewportRef.current.atEnd =
+      viewportHeight > 0 &&
+      maximumOffset - offset <= CHAT_INITIAL_END_THRESHOLD;
+    scheduleInitialViewportReady('scroll-extent');
   };
 
   const updateScrollExtent = ({
@@ -940,10 +951,17 @@ export function AgentChatView({
     const current = scrollGeometryRef.current;
     const nextMaxOffset = Math.max(0, contentHeight - viewportHeight);
     const boundedOffset = Math.min(current.offset, nextMaxOffset);
-    updateScrollGeometry({ contentHeight, offset: boundedOffset, viewportHeight });
+    updateScrollGeometry({
+      contentHeight,
+      offset: boundedOffset,
+      viewportHeight,
+    });
     const interaction = scrollInteractionRef.current;
     if (interaction.kind !== ChatScrollInteractionKind.Idle) {
-      scrollInteractionRef.current = { ...interaction, lastOffset: boundedOffset };
+      scrollInteractionRef.current = {
+        ...interaction,
+        lastOffset: boundedOffset,
+      };
     }
     updateInitialEndPosition(boundedOffset, contentHeight, viewportHeight);
   };
@@ -952,37 +970,72 @@ export function AgentChatView({
     const readiness = initialViewportRef.current;
     const geometry = scrollGeometryRef.current;
     if (
-      readiness.ready
-      || !readiness.itemsLoaded
-      || !readiness.contentSizeKnown
-      || geometry.viewportHeight <= 0
-      || geometry.contentHeight - geometry.viewportHeight <= CHAT_INITIAL_END_THRESHOLD
-      || readiness.atEnd
-    ) return;
+      readiness.ready ||
+      !readiness.itemsLoaded ||
+      !readiness.contentSizeKnown ||
+      geometry.viewportHeight <= 0 ||
+      geometry.contentHeight - geometry.viewportHeight <=
+        CHAT_INITIAL_END_THRESHOLD ||
+      readiness.atEnd
+    )
+      return;
     scrollToLatest(false);
   };
 
-  useEffect(() => () => {
-    const frame = initialViewportRef.current.frame;
-    if (frame !== null) cancelAnimationFrame(frame);
-    initialViewportRef.current.revision += 1;
-  }, []);
+  useEffect(() => {
+    recordAgentChatDiagnostic('viewport-props-changed', {
+      agent,
+      latestTurnId,
+      sessionId: state.sessionId,
+      state: state.status,
+      stateRevision: state.revision,
+      turnCount: turns.length,
+    });
+  }, [
+    agent,
+    latestTurnId,
+    state.revision,
+    state.sessionId,
+    state.status,
+    turns.length,
+  ]);
+
+  useEffect(() => {
+    recordAgentChatDiagnostic('viewport-mounted', {
+      agent,
+      sessionId: state.sessionId,
+    });
+    return () => {
+      recordAgentChatDiagnostic('viewport-unmounted', {
+        agent,
+        sessionId: state.sessionId,
+      });
+    };
+  }, [agent, state.sessionId]);
 
   const trackScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const nextMaxOffset = Math.max(0, contentSize.height - layoutMeasurement.height);
+    const nextMaxOffset = Math.max(
+      0,
+      contentSize.height - layoutMeasurement.height,
+    );
     const offset = Math.max(0, Math.min(nextMaxOffset, contentOffset.y));
     updateScrollGeometry({
       contentHeight: contentSize.height,
       offset,
       viewportHeight: layoutMeasurement.height,
     });
-    updateInitialEndPosition(offset, contentSize.height, layoutMeasurement.height);
+    updateInitialEndPosition(
+      offset,
+      contentSize.height,
+      layoutMeasurement.height,
+    );
     const interaction = scrollInteractionRef.current;
     if (
-      interaction.kind !== ChatScrollInteractionKind.Dragging
-      && interaction.kind !== ChatScrollInteractionKind.UserMomentum
-    ) return;
+      interaction.kind !== ChatScrollInteractionKind.Dragging &&
+      interaction.kind !== ChatScrollInteractionKind.UserMomentum
+    )
+      return;
     updateFollowFromUserScroll(interaction.lastOffset, offset, nextMaxOffset);
     scrollInteractionRef.current = { ...interaction, lastOffset: offset };
   };
@@ -1060,11 +1113,20 @@ export function AgentChatView({
   };
   const adjustScrollbar = (direction: 'up' | 'down') => {
     const current = scrollGeometryRef.current;
-    const currentMaxOffset = Math.max(0, current.contentHeight - current.viewportHeight);
-    const desiredOffset = Math.max(0, Math.min(
-      currentMaxOffset,
-      current.offset + (direction === 'down' ? current.viewportHeight : -current.viewportHeight),
-    ));
+    const currentMaxOffset = Math.max(
+      0,
+      current.contentHeight - current.viewportHeight,
+    );
+    const desiredOffset = Math.max(
+      0,
+      Math.min(
+        currentMaxOffset,
+        current.offset +
+          (direction === 'down'
+            ? current.viewportHeight
+            : -current.viewportHeight),
+      ),
+    );
     if (desiredOffset === current.offset) return;
     updateScrollGeometry({ ...current, offset: desiredOffset });
     updateFollowFromUserScroll(current.offset, desiredOffset, currentMaxOffset);
@@ -1080,25 +1142,34 @@ export function AgentChatView({
     viewableItems: ViewToken<TranscriptTurn>[];
   }) => {
     const currentLatestTurnId = latestTurnIdRef.current;
-    initialViewportRef.current.viewableLatestTurnId = currentLatestTurnId !== null
-      && viewableItems.some(token => (
-        token.isViewable && token.item.id === currentLatestTurnId
-      ))
-      ? currentLatestTurnId
-      : null;
-    scheduleInitialViewportReady();
+    initialViewportRef.current.viewableLatestTurnId =
+      currentLatestTurnId !== null &&
+      viewableItems.some(
+        token => token.isViewable && token.item.id === currentLatestTurnId,
+      )
+        ? currentLatestTurnId
+        : null;
+    scheduleInitialViewportReady('viewable-items');
   };
-  const openTranscriptLink = useCallback((url: string) => {
-    const file = transcriptFileLinkTarget(url, state.transcript.info?.directory);
-    if (file) {
-      onOpenFile(file);
-      return;
-    }
-    if (/^(?:https?:|mailto:|tel:)/i.test(url)) openExternalUrl(url);
-  }, [onOpenFile, state.transcript.info?.directory]);
+  const openTranscriptLink = useCallback(
+    (url: string) => {
+      const file = transcriptFileLinkTarget(
+        url,
+        state.transcript.info?.directory,
+      );
+      if (file) {
+        onOpenFile(file);
+        return;
+      }
+      if (/^(?:https?:|mailto:|tel:)/i.test(url)) openExternalUrl(url);
+    },
+    [onOpenFile, state.transcript.info?.directory],
+  );
 
   return (
-    <View className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}>
+    <View
+      className={cn('flex-1', appGlassBackgroundClassName(appGlassEnabled))}
+    >
       <View
         testID="agent-chat-viewport"
         className="relative flex-1"
@@ -1119,7 +1190,10 @@ export function AgentChatView({
             <View className={index === 0 ? '' : 'mt-7'}>
               <TranscriptTurnView
                 turn={item}
-                working={index === turns.length - 1 && (agentWorking || item.status === 'working')}
+                working={
+                  index === turns.length - 1 &&
+                  (agentWorking || item.status === 'working')
+                }
                 onLinkPress={openTranscriptLink}
               />
             </View>
@@ -1127,44 +1201,75 @@ export function AgentChatView({
           contentContainerStyle={chatListStyles.content}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          maintainVisibleContentPosition={CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION}
+          maintainVisibleContentPosition={
+            CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION
+          }
           scrollIndicatorInsets={contentInsets}
           showsVerticalScrollIndicator={false}
           viewabilityConfig={CHAT_VIEWABILITY_CONFIG}
-          ListHeaderComponent={(
+          ListHeaderComponent={
             <>
               <ChatBoundarySpacer height={contentPadding.top} />
               {state.status !== 'live' && (
-                <View className={cn('flex-row items-center gap-2 py-3', turns.length > 0 && 'mb-4')}>
-                  {state.status === 'loading' ? <ActivityIndicator size="small" color={colors.primary} /> : <CircleAlert size={14} color={colors.textSecondary} />}
-                  <Text numberOfLines={2} className="min-w-0 flex-1 text-[12px] text-muted-foreground">
-                    {state.error || (state.status === 'loading' ? `Reading the local ${agentName} history…` : 'The transcript is temporarily unavailable.')}
+                <View
+                  className={cn(
+                    'flex-row items-center gap-2 py-3',
+                    turns.length > 0 && 'mb-4',
+                  )}
+                >
+                  {state.status === 'loading' ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <CircleAlert size={14} color={colors.textSecondary} />
+                  )}
+                  <Text
+                    numberOfLines={2}
+                    className="min-w-0 flex-1 text-[12px] text-muted-foreground"
+                  >
+                    {state.error ||
+                      (state.status === 'loading'
+                        ? `Reading the local ${agentName} history…`
+                        : 'The transcript is temporarily unavailable.')}
                   </Text>
                 </View>
               )}
             </>
-          )}
-          ListFooterComponent={<ChatBoundarySpacer height={contentPadding.bottom} />}
-          ListEmptyComponent={state.status === 'live' && agentWorking
-            ? <ThinkingIndicator />
-            : state.status === 'live' ? (
-            <View className="flex-1 items-center justify-center px-8 py-20">
-              <Text className="text-center text-[14px] font-semibold text-foreground">No conversation yet</Text>
-              <Text className="mt-1 max-w-[280px] text-center text-[12px] leading-[18px] text-muted-foreground">Open the composer from the controls below to send a message.</Text>
-            </View>
-          ) : null}
+          }
+          ListFooterComponent={
+            <ChatBoundarySpacer height={contentPadding.bottom} />
+          }
+          ListEmptyComponent={
+            state.status === 'live' && agentWorking ? (
+              <ThinkingIndicator />
+            ) : state.status === 'live' ? (
+              <View className="flex-1 items-center justify-center px-8 py-20">
+                <Text className="text-center text-[14px] font-semibold text-foreground">
+                  No conversation yet
+                </Text>
+                <Text className="mt-1 max-w-[280px] text-center text-[12px] leading-[18px] text-muted-foreground">
+                  Open the composer from the controls below to send a message.
+                </Text>
+              </View>
+            ) : null
+          }
           onContentSizeChange={(_width, height) => {
-            const contentSizeWasKnown = initialViewportRef.current.contentSizeKnown;
+            const contentSizeWasKnown =
+              initialViewportRef.current.contentSizeKnown;
             initialViewportRef.current.contentSizeKnown = true;
-            initialViewportRef.current.measuredLatestTurnId = latestTurnIdRef.current;
+            initialViewportRef.current.measuredLatestTurnId =
+              latestTurnIdRef.current;
             const current = scrollGeometryRef.current;
-            updateScrollExtent({ contentHeight: height, viewportHeight: current.viewportHeight });
+            updateScrollExtent({
+              contentHeight: height,
+              viewportHeight: current.viewportHeight,
+            });
             alignLoadedInitialViewportToEnd();
             if (
-              contentSizeWasKnown
-              && height > current.contentHeight + CHAT_SCROLL_OFFSET_EPSILON
-              && followEndRef.current
-            ) list.current?.scrollToEnd({ animated: false });
+              contentSizeWasKnown &&
+              height > current.contentHeight + CHAT_SCROLL_OFFSET_EPSILON &&
+              followEndRef.current
+            )
+              list.current?.scrollToEnd({ animated: false });
           }}
           onLayout={event => {
             const current = scrollGeometryRef.current;
@@ -1175,11 +1280,12 @@ export function AgentChatView({
           }}
           onEndReached={() => {
             initialViewportRef.current.atEnd = true;
-            scheduleInitialViewportReady();
+            scheduleInitialViewportReady('end-reached');
           }}
           onEndReachedThreshold={0}
           onLoad={() => {
             initialViewportRef.current.itemsLoaded = true;
+            recordInitialViewportReadiness('items-loaded');
             alignLoadedInitialViewportToEnd();
           }}
           onScroll={trackScroll}
@@ -1193,7 +1299,10 @@ export function AgentChatView({
         {!followEnd && (
           <Button
             accessibilityLabel="Jump to latest"
-            className={cn('absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg', appGlassEnabled && 'border')}
+            className={cn(
+              'absolute right-4 h-8 flex-row gap-1.5 rounded-full px-3 shadow-lg',
+              appGlassEnabled && 'border',
+            )}
             style={[
               { bottom: latestButtonBottom },
               appGlassEnabled ? appGlassControlStyle(false, colors) : undefined,
@@ -1202,8 +1311,10 @@ export function AgentChatView({
             onPress={() => {
               setFollowEnd(true);
               scrollToLatest(true);
-            }}>
-            <ChevronDown size={15} color={colors.text} /><Text className="text-[10px] font-semibold">Latest</Text>
+            }}
+          >
+            <ChevronDown size={15} color={colors.text} />
+            <Text className="text-[10px] font-semibold">Latest</Text>
           </Button>
         )}
         {scrollThumb && (

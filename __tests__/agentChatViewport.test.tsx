@@ -513,44 +513,19 @@ describe('AgentChatView auto-follow', () => {
 });
 
 describe('AgentChatView initial viewport readiness', () => {
-  const animationFrameGlobals = global as typeof global & {
-    requestAnimationFrame: typeof requestAnimationFrame;
-    cancelAnimationFrame: typeof cancelAnimationFrame;
-  };
   let renderer: ReactTestRenderer;
   let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
-  let nextFrame: number;
-  let frames: Map<number, Parameters<typeof requestAnimationFrame>[0]>;
 
   beforeEach(() => {
     scrollToEnd = jest.fn();
     scrollToOffset = jest.fn();
-    nextFrame = 1;
-    frames = new Map();
-    jest.spyOn(animationFrameGlobals, 'requestAnimationFrame').mockImplementation(callback => {
-      const frame = nextFrame;
-      nextFrame += 1;
-      frames.set(frame, callback);
-      return frame;
-    });
-    jest.spyOn(animationFrameGlobals, 'cancelAnimationFrame').mockImplementation(frame => {
-      if (frame != null) {
-        frames.delete(frame);
-      }
-    });
   });
 
   afterEach(() => {
     act(() => renderer?.unmount());
     jest.restoreAllMocks();
   });
-
-  const flushAnimationFrame = () => {
-    const callbacks = [...frames.values()];
-    frames.clear();
-    act(() => callbacks.forEach(callback => callback(0)));
-  };
 
   const renderChat = (state: AgentChatState, onReady: jest.Mock) => {
     act(() => {
@@ -603,37 +578,29 @@ describe('AgentChatView initial viewport readiness', () => {
     });
   };
 
-  test('layout, content measurement, and RAFs are insufficient without the latest turn at the end', () => {
+  test('layout and content measurement are insufficient without the latest turn at the end', () => {
     const onReady = jest.fn();
     renderChat(chatState([TURN]), onReady);
 
     layoutAndMeasure(1_000);
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
 
     reportViewableTurns([TURN]);
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
   });
 
-  test('signals exactly once when FlashList reports the latest turn at the real end', () => {
+  test('latches readiness exactly once when FlashList reports the latest turn at the real end', () => {
     const onReady = jest.fn();
     renderChat(chatState([TURN]), onReady);
     layoutAndMeasure(1_000);
     reportViewableTurns([TURN]);
     reportEndReached();
-    flushAnimationFrame();
-    expect(onReady).not.toHaveBeenCalled();
-    flushAnimationFrame();
     expect(onReady).toHaveBeenCalledTimes(1);
 
     act(() => {
+      flatList(renderer).props.onScroll(scrollEvent(500, 1_000));
       flatList(renderer).props.onContentSizeChange(0, 1_200);
     });
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
@@ -648,34 +615,24 @@ describe('AgentChatView initial viewport readiness', () => {
 
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
     expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
 
     reportViewableTurns([TURN]);
     reportEndReached();
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('requires bottom conditions to remain valid through the final render pass', () => {
+  test('keeps readiness latched when native geometry jitters after reaching the bottom', () => {
     const onReady = jest.fn();
     renderChat(chatState([TURN]), onReady);
     layoutAndMeasure(1_000);
     reportViewableTurns([TURN]);
     reportEndReached();
+    expect(onReady).toHaveBeenCalledTimes(1);
 
-    flushAnimationFrame();
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_100);
     });
-    flushAnimationFrame();
-    expect(onReady).not.toHaveBeenCalled();
-
-    reportEndReached();
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
@@ -692,13 +649,9 @@ describe('AgentChatView initial viewport readiness', () => {
     reportEndReached();
 
     reportViewableTurns([turns[0]]);
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).not.toHaveBeenCalled();
 
     reportViewableTurns([turns[99]]);
-    flushAnimationFrame();
-    flushAnimationFrame();
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
@@ -712,8 +665,6 @@ describe('AgentChatView initial viewport readiness', () => {
       });
       flatList(renderer).props.onContentSizeChange(0, 0);
     });
-    flushAnimationFrame();
-    flushAnimationFrame();
 
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(scrollToEnd).not.toHaveBeenCalled();

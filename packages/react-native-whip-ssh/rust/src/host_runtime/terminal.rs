@@ -12,7 +12,11 @@ use crate::herdr_terminal::{
 };
 
 pub(super) fn close_terminal_intent(inner: &Arc<RuntimeInner>, terminal_id: String) {
-    inner.agents.close_terminal(&terminal_id);
+    // This releases the interactive renderer bridge, not the authoritative
+    // terminal -> pane -> agent-session relationship. Android deliberately
+    // releases renderer ownership while backgrounded, and transcript bindings
+    // must survive that transport-only lifecycle. HostState reconciliation or
+    // the explicit agent-chat detach operation owns transcript release.
     let bridge_id = {
         let mut state = inner.state.lock();
         state.terminal_dispatched_geometries.remove(&terminal_id);
@@ -1333,7 +1337,6 @@ impl HostRuntime {
         };
         close_all_herdr_terminal_bridges(self.inner.id.clone());
         for terminal_id in terminal_ids {
-            self.inner.agents.close_terminal(&terminal_id);
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: self.inner.id.clone(),
                 terminal_id,

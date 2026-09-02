@@ -761,28 +761,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     transferId: Uint8Array,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_bind_agent_session(
-    uniffiSelf: bigint,
-    agent: Uint8Array,
-    terminalId: Uint8Array,
-    sessionId: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_cancel_transfer(
     uniffiSelf: bigint,
     transferId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_agent_session(
-    uniffiSelf: bigint,
-    key: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): void;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_agent_terminal(
-    uniffiSelf: bigint,
-    terminalId: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_close_all_terminals(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -819,6 +802,16 @@ interface NativeModuleInterface {
     label: Uint8Array,
     launch: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_current_agent_chat(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_detach_agent_chat(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_disconnect(
     uniffiSelf: bigint,
   ): bigint;
@@ -869,12 +862,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_measure_host_latency(
     uniffiSelf: bigint,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_agent_session(
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_agent_chat(
     uniffiSelf: bigint,
-    agent: Uint8Array,
     terminalId: Uint8Array,
-    sessionId: Uint8Array,
-    cacheBlob: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_open_ssh_shell(
@@ -983,10 +973,9 @@ interface NativeModuleInterface {
     bytes: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
-  ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_session(
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_start_agent_chat(
     uniffiSelf: bigint,
-    terminalId: Uint8Array,
-    key: Uint8Array,
+    bindingToken: Uint8Array,
     cacheBlob: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
@@ -1226,10 +1215,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_integration_status(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_agent_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_await_transfer(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_bind_agent_session(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_cancel_transfer(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_session(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_agent_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_all_terminals(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_terminal(): number;
@@ -1238,6 +1224,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_remote_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_create_tab_with_launch(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_current_agent_chat(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_detach_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_disconnect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
@@ -1250,7 +1238,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_session(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text(): number;
@@ -1269,7 +1257,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_geometry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_input(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_session(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_attachment_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_download(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_start_herdr_server(): number;

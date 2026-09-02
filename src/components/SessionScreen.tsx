@@ -23,7 +23,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import WebView from 'react-native-webview';
-
 import {
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
@@ -60,8 +59,6 @@ import {
   activePaneForTerminal,
   agentChatControlState,
   chatAgentForPane,
-  openCodeSessionIdForPane,
-  type ChatAgent,
 } from '../lib/agentChatSession';
 import {
   AgentChatPresentationPhase,
@@ -77,18 +74,25 @@ import {
   type AgentChatPresentation,
 } from '../lib/agentChatPresentation';
 import {
+  reconcileAgentChatViews,
+  type AgentChatViewState,
+} from '../lib/agentChatReconciliation';
+import {
   codexChatAction,
   codexMissingIdentityAction,
-  codexSessionIdForPane,
   type CodexIntegrationStatus,
 } from '../lib/codexSession';
-import { emptyTranscript, type AgentChatState } from '../agentChat';
+import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
 import {
   agentTranscriptReadiness,
-  codexTranscriptService,
+  agentTranscriptService,
+  type AgentChatProjection,
 } from '../services/CodexTranscriptService';
-import { openCodeTranscriptService } from '../services/OpenCodeTranscriptService';
+import {
+  agentChatDiagnosticToken,
+  recordAgentChatDiagnostic,
+} from '../services/agentChatDiagnostics';
 import { terminalTabSelectionStarted } from '../services/performanceTrace';
 import {
   bestEffortCleanup,
@@ -178,22 +182,7 @@ interface BrowserWebViewHandle {
   goBack: () => void;
 }
 
-interface OpenChatView {
-  agent: ChatAgent;
-  key: string | null;
-  presentation: AgentChatPresentation;
-  state: AgentChatState;
-}
-
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
-
-function loadingChatState(sessionId: string): AgentChatState {
-  return {
-    sessionId,
-    transcript: emptyTranscript(sessionId),
-    status: 'loading',
-  };
-}
 
 export function SessionScreen({
   hostSessionId,
@@ -257,7 +246,7 @@ export function SessionScreen({
     string | null
   >(null);
   const [chatViews, setChatViews] = useState(
-    () => new Map<string, OpenChatView>(),
+    () => new Map<string, AgentChatViewState>(),
   );
   const [pendingIntegrationPaneId, setPendingIntegrationPaneId] = useState<
     string | null
@@ -296,6 +285,7 @@ export function SessionScreen({
   const chatOpenRequestRef = useRef(0);
   const pendingChatOpenTerminalIdRef = useRef<string | null>(null);
   const chatPresentationGenerationRef = useRef(0);
+  const lastActiveChatDiagnosticRef = useRef('');
   const reportedChatFailureGenerationsRef = useRef(new Set<number>());
   const mutationInFlight = useRef(false);
 
@@ -305,11 +295,12 @@ export function SessionScreen({
   }, []);
 
   const requestedChatPresentation = useCallback(
-    (state: AgentChatState) => requestChatPresentation(
-      dormantChatPresentation(),
-      agentTranscriptReadiness(state),
-      nextChatPresentationGeneration(),
-    ),
+    (state: AgentChatState) =>
+      requestChatPresentation(
+        dormantChatPresentation(),
+        agentTranscriptReadiness(state),
+        nextChatPresentationGeneration(),
+      ),
     [nextChatPresentationGeneration],
   );
 
@@ -400,29 +391,11 @@ export function SessionScreen({
     terminalState.activeTerminalId,
   );
   const activeChatAgent = chatAgentForPane(activePane);
-  const projectedActiveChatSessionId =
-    activeChatAgent === 'codex'
-      ? codexSessionIdForPane(activePane)
-      : activeChatAgent === 'opencode'
-      ? openCodeSessionIdForPane(activePane)
-      : null;
-  const projectedActiveChatView =
-    activeTerminalSession && activeChatAgent
-      ? chatViews.get(activeTerminalSession.terminalId) || null
-      : null;
-  const activeChatView =
-    projectedActiveChatView?.agent === activeChatAgent &&
-    projectedActiveChatView.state.sessionId === projectedActiveChatSessionId
-      ? projectedActiveChatView
-      : null;
-  const requestedProjectionReplacement = Boolean(
-    projectedActiveChatView &&
-      !activeChatView &&
-      chatPresentationRequested(projectedActiveChatView.presentation),
-  );
+  const activeChatView = activeTerminalSession
+    ? chatViews.get(activeTerminalSession.terminalId) || null
+    : null;
   const chatControlLoading =
     chatPresentationLoading(activeChatView?.presentation) ||
-    requestedProjectionReplacement ||
     pendingChatOpenTerminalId === activeTerminalSession?.terminalId ||
     (activeChatAgent === 'codex' &&
       (codexIntegrationInstalling ||
@@ -442,24 +415,44 @@ export function SessionScreen({
       chatPresentationMountsViewport(activeChatView.presentation) &&
       agentTranscriptReadiness(activeChatView.state) === 'usable',
   );
-  const chatViewIdentity = [...chatViews.entries()]
-    .map(
-      ([terminalId, view]) =>
-        `${terminalId}:${view.agent}:${view.key || ''}:${
-          view.state.sessionId
-        }:${view.state.status}:${view.presentation.phase}:${
-          view.presentation.generation
-        }`,
-    )
-    .sort()
-    .join('|');
   const chatSubscriptionIdentity = [...chatViews.entries()]
-    .map(
-      ([terminalId, view]) => `${terminalId}:${view.agent}:${view.key || ''}`,
+    .map(([terminalId, view]) =>
+      [terminalId, view.binding.bindingToken].join(':'),
     )
     .sort()
     .join('|');
   chatViewsRef.current = chatViews;
+
+  useEffect(() => {
+    if (!activeTerminalSession) return;
+    const details = {
+      agent: activeChatView?.binding.agent ?? activeChatAgent,
+      bindingToken: activeChatView
+        ? agentChatDiagnosticToken(activeChatView.binding.bindingToken)
+        : null,
+      paneId: activePane?.pane_id,
+      pendingOpen:
+        pendingChatOpenTerminalId === activeTerminalSession.terminalId,
+      phase: activeChatView?.presentation.phase ?? null,
+      state: activeChatView?.state.status ?? null,
+      stateRevision: activeChatView?.state.revision,
+      terminalId: activeTerminalSession.terminalId,
+      viewportMounted: chatViewportMounted,
+      visible: chatVisible,
+    };
+    const fingerprint = JSON.stringify(details);
+    if (lastActiveChatDiagnosticRef.current === fingerprint) return;
+    lastActiveChatDiagnosticRef.current = fingerprint;
+    recordAgentChatDiagnostic('active-presentation-projected', details);
+  }, [
+    activeChatAgent,
+    activeChatView,
+    activePane?.pane_id,
+    activeTerminalSession,
+    chatViewportMounted,
+    chatVisible,
+    pendingChatOpenTerminalId,
+  ]);
   const activeTarget =
     terminalTargets.find(
       target =>
@@ -481,7 +474,10 @@ export function SessionScreen({
     const previewId = tunnelPreviewRef.current;
     tunnelPreviewRef.current = null;
     if (previewId !== null) {
-      bestEffortCleanup(client.native.stopPreview(previewId), 'web-tunnel-close');
+      bestEffortCleanup(
+        client.native.stopPreview(previewId),
+        'web-tunnel-close',
+      );
     }
   };
 
@@ -607,15 +603,15 @@ export function SessionScreen({
 
   useEffect(
     () => () => {
-      for (const [terminalId, view] of chatViewsRef.current) {
-        const service =
-          view.agent === 'codex'
-            ? codexTranscriptService
-            : openCodeTranscriptService;
-        service.closeTerminal(hostSessionId, terminalId, view.key ?? undefined);
+      for (const terminalId of chatViewsRef.current.keys()) {
+        agentTranscriptService.closeTerminal(
+          hostSessionId,
+          terminalId,
+          client.native,
+        );
       }
     },
-    [hostSessionId],
+    [client, hostSessionId],
   );
 
   useEffect(() => {
@@ -623,101 +619,43 @@ export function SessionScreen({
       session => session.terminalId,
     );
     const liveTerminalIds = new Set(terminalIds);
-    const nextViews = new Map(chatViewsRef.current);
-    let changed = false;
-    for (const [terminalId, view] of nextViews) {
-      const previousService =
-        view.agent === 'codex'
-          ? codexTranscriptService
-          : openCodeTranscriptService;
+    const projections = new Map<string, AgentChatProjection>();
+    const reboundPresentations = new Map<string, AgentChatPresentation>();
+    for (const [terminalId, view] of chatViewsRef.current) {
       if (!liveTerminalIds.has(terminalId)) {
-        previousService.closeTerminal(
+        agentTranscriptService.closeTerminal(
           hostSessionId,
           terminalId,
-          view.key ?? undefined,
-        );
-        nextViews.delete(terminalId);
-        changed = true;
-        continue;
-      }
-      const pane = snapshot.panes.find(item => item.terminal_id === terminalId);
-      const nextAgent = chatAgentForPane(pane);
-      if (!nextAgent) {
-        previousService.closeTerminal(
-          hostSessionId,
-          terminalId,
-          view.key ?? undefined,
-        );
-        nextViews.delete(terminalId);
-        changed = true;
-        continue;
-      }
-      const sessionId =
-        nextAgent === 'codex'
-          ? codexSessionIdForPane(pane)
-          : openCodeSessionIdForPane(pane);
-      if (
-        sessionId &&
-        (sessionId !== view.state.sessionId || nextAgent !== view.agent)
-      ) {
-        previousService.closeTerminal(
-          hostSessionId,
-          terminalId,
-          view.key ?? undefined,
-        );
-        if (!chatPresentationRequested(view.presentation)) {
-          nextViews.delete(terminalId);
-          changed = true;
-          continue;
-        }
-        const service =
-          nextAgent === 'codex'
-            ? codexTranscriptService
-            : openCodeTranscriptService;
-        const key = service.activate(
-          hostSessionId,
-          terminalId,
-          sessionId,
           client.native,
         );
-        const state = service.getState(key) || loadingChatState(sessionId);
-        nextViews.set(terminalId, {
-          agent: nextAgent,
-          key,
-          presentation: requestedChatPresentation(state),
-          state,
-        });
-        changed = true;
-      } else if (!sessionId && view.state.status !== 'unavailable') {
-        previousService.closeTerminal(
-          hostSessionId,
+        continue;
+      }
+      const projection = agentTranscriptService.reconcile(
+        hostSessionId,
+        terminalId,
+        client.native,
+      );
+      projections.set(terminalId, projection);
+      if (
+        projection.type === 'bound' &&
+        projection.binding.bindingToken !== view.binding.bindingToken &&
+        chatPresentationRequested(view.presentation)
+      ) {
+        reboundPresentations.set(
           terminalId,
-          view.key ?? undefined,
+          requestedChatPresentation(projection.state),
         );
-        if (!chatPresentationRequested(view.presentation)) {
-          nextViews.delete(terminalId);
-          changed = true;
-          continue;
-        }
-        const state: AgentChatState = {
-          sessionId: '',
-          transcript: emptyTranscript(''),
-          status: 'unavailable',
-          error:
-            'This pane no longer reports a supported native agent session ID.',
-        };
-        nextViews.set(terminalId, {
-          agent: nextAgent,
-          key: null,
-          presentation: requestedChatPresentation(state),
-          state,
-        });
-        changed = true;
       }
     }
-    if (changed) setChatViews(nextViews);
+    setChatViews(current =>
+      reconcileAgentChatViews(
+        current,
+        liveTerminalIds,
+        projections,
+        reboundPresentations,
+      ),
+    );
   }, [
-    chatViewIdentity,
     client,
     hostSessionId,
     snapshot.panes,
@@ -728,27 +666,37 @@ export function SessionScreen({
   useEffect(() => {
     const subscriptions = [...chatViewsRef.current.entries()].flatMap(
       ([terminalId, view]) => {
-        if (!view.key) return [];
-        const service =
-          view.agent === 'codex'
-            ? codexTranscriptService
-            : openCodeTranscriptService;
         return [
-          service.subscribe(view.key, state => {
+          agentTranscriptService.subscribe(view.binding.bindingToken, state => {
             const resetGeneration = nextChatPresentationGeneration();
             setChatViews(current => {
               const active = current.get(terminalId);
-              if (active?.key !== view.key || active.state === state)
+              if (
+                active?.binding.bindingToken !== view.binding.bindingToken ||
+                active.state === state
+              )
                 return current;
               const readiness = agentTranscriptReadiness(state);
+              const nextPresentation = updateChatTranscriptReadiness(
+                active.presentation,
+                readiness,
+                resetGeneration,
+              );
+              recordAgentChatDiagnostic('transcript-update-projected', {
+                bindingToken: agentChatDiagnosticToken(
+                  view.binding.bindingToken,
+                ),
+                fromPhase: active.presentation.phase,
+                readiness,
+                state: state.status,
+                stateRevision: state.revision,
+                terminalId,
+                toPhase: nextPresentation.phase,
+              });
               const next = new Map(current);
               next.set(terminalId, {
                 ...active,
-                presentation: updateChatTranscriptReadiness(
-                  active.presentation,
-                  readiness,
-                  resetGeneration,
-                ),
+                presentation: nextPresentation,
                 state,
               });
               return next;
@@ -762,26 +710,26 @@ export function SessionScreen({
 
   useEffect(() => {
     if (
-      projectedActiveChatView?.presentation.phase !==
-        AgentChatPresentationPhase.Failed
-    ) return;
-    const generation = projectedActiveChatView.presentation.generation;
+      activeChatView?.presentation.phase !== AgentChatPresentationPhase.Failed
+    )
+      return;
+    const generation = activeChatView.presentation.generation;
     if (reportedChatFailureGenerationsRef.current.has(generation)) return;
     reportedChatFailureGenerationsRef.current.add(generation);
     if (
-      pendingChatOpenTerminalIdRef.current ===
-      activeTerminalSession?.terminalId
-    ) updatePendingChatOpen(null);
+      pendingChatOpenTerminalIdRef.current === activeTerminalSession?.terminalId
+    )
+      updatePendingChatOpen(null);
     showAppAlert(
       `${
-        projectedActiveChatView.agent === 'opencode' ? 'OpenCode' : 'Codex'
+        activeChatView.binding.agent === 'opencode' ? 'OpenCode' : 'Codex'
       } history unavailable`,
-      projectedActiveChatView.state.error ||
+      activeChatView.state.error ||
         'The transcript could not be loaded for this session.',
     );
   }, [
     activeTerminalSession?.terminalId,
-    projectedActiveChatView,
+    activeChatView,
     showAppAlert,
     updatePendingChatOpen,
   ]);
@@ -793,35 +741,32 @@ export function SessionScreen({
     );
     setPendingIntegrationPaneId(null);
     updatePendingChatOpen(null);
-    const sessionId = codexSessionIdForPane(pane);
-    if (pane && sessionId) {
-      const key = codexTranscriptService.activate(
+    if (pane) {
+      const projection = agentTranscriptService.activate(
         hostSessionId,
         pane.terminal_id,
-        sessionId,
         client.native,
       );
-      const state =
-        codexTranscriptService.getState(key) || loadingChatState(sessionId);
-      const presentation = requestedChatPresentation(state);
-      setChatViews(current => {
-        const next = new Map(current);
-        next.set(pane.terminal_id, {
-          agent: 'codex',
-          key,
-          presentation,
-          state,
+      if (projection.type === 'bound') {
+        const presentation = requestedChatPresentation(projection.state);
+        setChatViews(current => {
+          const next = new Map(current);
+          next.set(pane.terminal_id, {
+            binding: projection.binding,
+            presentation,
+            state: projection.state,
+          });
+          return next;
         });
-        return next;
-      });
-    } else {
-      setAgentIdentityWarning({
-        agent: 'codex',
-        title: 'Restart Codex to enable Chat',
-        message:
-          'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
-      });
+        return;
+      }
     }
+    setAgentIdentityWarning({
+      agent: 'codex',
+      title: 'Restart Codex to enable Chat',
+      message:
+        'The Herdr Codex integration is installed, but this already-running Codex process has no native session identity. Restart Codex in this pane, then tap Chat again.',
+    });
   }, [
     client,
     hostSessionId,
@@ -1023,10 +968,12 @@ export function SessionScreen({
     terminalTabSelectionStarted(pane.terminal_id);
     onActivateTerminal(pane);
     reportBackgroundFailure(
-      run(() => client.native.requestHerdrApi({
-        method: 'pane.focus',
-        params: { pane_id: pane.pane_id },
-      })),
+      run(() =>
+        client.native.requestHerdrApi({
+          method: 'pane.focus',
+          params: { pane_id: pane.pane_id },
+        }),
+      ),
       'session-pane-focus',
     );
   };
@@ -1035,15 +982,19 @@ export function SessionScreen({
     if (mutationInFlight.current) return;
     let succeeded = true;
     if (editorMode === 'rename-tab' && selectedTab) {
-      succeeded = await run(() => client.native.requestHerdrApi({
-        method: 'tab.rename',
-        params: { tab_id: selectedTab.tab_id, label: name },
-      }));
+      succeeded = await run(() =>
+        client.native.requestHerdrApi({
+          method: 'tab.rename',
+          params: { tab_id: selectedTab.tab_id, label: name },
+        }),
+      );
     } else if (editorMode === 'rename-pane' && editingPaneId) {
-      succeeded = await run(() => client.native.requestHerdrApi({
-        method: 'pane.rename',
-        params: { pane_id: editingPaneId, label: name.trim() || null },
-      }));
+      succeeded = await run(() =>
+        client.native.requestHerdrApi({
+          method: 'pane.rename',
+          params: { pane_id: editingPaneId, label: name.trim() || null },
+        }),
+      );
     } else if (workspace) {
       pendingFocus.current = null;
       succeeded = await run(async () => {
@@ -1089,10 +1040,14 @@ export function SessionScreen({
     // Herdr focuses a surviving tab after closing the current one.
     pendingPaneFocus.current = null;
     pendingFocus.current = { previousId: item.tab_id };
-    if (!(await run(() => client.native.requestHerdrApi({
-      method: 'tab.close',
-      params: { tab_id: item.tab_id },
-    })))) {
+    if (
+      !(await run(() =>
+        client.native.requestHerdrApi({
+          method: 'tab.close',
+          params: { tab_id: item.tab_id },
+        }),
+      ))
+    ) {
       pendingFocus.current = null;
     } else if (pendingCreatedSelection?.tab.tab_id === item.tab_id) {
       setPendingCreatedSelection(null);
@@ -1111,10 +1066,12 @@ export function SessionScreen({
       setEditingPaneId(null);
       setEditorMode(null);
     }
-    await run(() => client.native.requestHerdrApi({
-      method: 'pane.close',
-      params: { pane_id: pane.pane_id },
-    }));
+    await run(() =>
+      client.native.requestHerdrApi({
+        method: 'pane.close',
+        params: { pane_id: pane.pane_id },
+      }),
+    );
   };
 
   const closeEditor = () => {
@@ -1144,8 +1101,7 @@ export function SessionScreen({
   };
 
   const openAttachments = () => {
-    if (activeTerminalSession?.status !== 'connected')
-      return;
+    if (activeTerminalSession?.status !== 'connected') return;
     setAttachmentTerminalId(activeTerminalSession.terminalId);
     setAttachmentsOpen(true);
   };
@@ -1212,30 +1168,8 @@ export function SessionScreen({
     if (
       pendingChatOpenTerminalIdRef.current === terminalId ||
       (activeChatView && chatPresentationRequested(activeChatView.presentation))
-    ) return;
-    if (
-      activeChatView &&
-      agentTranscriptReadiness(activeChatView.state) !== 'failed'
-    ) {
-      const generation = nextChatPresentationGeneration();
-      setChatViews(current => {
-        const view = current.get(terminalId);
-        if (
-          view?.key !== activeChatView.key ||
-          view.state.sessionId !== activeChatView.state.sessionId
-        ) return current;
-        const presentation = requestChatPresentation(
-          view.presentation,
-          agentTranscriptReadiness(view.state),
-          generation,
-        );
-        if (presentation === view.presentation) return current;
-        const next = new Map(current);
-        next.set(terminalId, { ...view, presentation });
-        return next;
-      });
+    )
       return;
-    }
     const request = chatOpenRequestRef.current + 1;
     chatOpenRequestRef.current = request;
     updatePendingChatOpen(terminalId);
@@ -1244,14 +1178,27 @@ export function SessionScreen({
       activeTerminalIdRef.current === terminalId;
     let chatPane = activePane;
     let agent = chatAgentForPane(chatPane);
+    recordAgentChatDiagnostic('open-pressed', {
+      agent,
+      paneId: chatPane.pane_id,
+      request,
+      terminalId,
+    });
     try {
-      const projectedSessionId =
-        agent === 'codex'
-          ? codexSessionIdForPane(chatPane)
-          : agent === 'opencode'
-          ? openCodeSessionIdForPane(chatPane)
-          : null;
-      if (agent && !projectedSessionId) {
+      let projection = agentTranscriptService.activate(
+        hostSessionId,
+        terminalId,
+        client.native,
+      );
+      if (projection.type === 'no-chat') {
+        recordAgentChatDiagnostic('open-refreshing-host-state', {
+          reason: projection.reason,
+          request,
+          terminalId,
+        });
+        // Agent session reports are not a standalone Herdr event. An explicit
+        // user open refreshes the native HostRuntime once before Rust decides
+        // that this terminal has no supported Chat binding.
         setBusy(true);
         const refreshed = await client.snapshot();
         if (!requestIsCurrent()) return;
@@ -1259,72 +1206,55 @@ export function SessionScreen({
           refreshed.panes.find(item => item.pane_id === chatPane.pane_id) ||
           chatPane;
         agent = chatAgentForPane(chatPane);
-        setBusy(false);
-      }
-      if (agent === 'opencode') {
-        const sessionId = openCodeSessionIdForPane(chatPane);
-        if (!sessionId) {
-          setAgentIdentityWarning({
-            agent: 'opencode',
-            title: 'OpenCode identity unavailable',
-            message:
-              'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
-          });
-          return;
-        }
-        const key = openCodeTranscriptService.activate(
+        projection = agentTranscriptService.activate(
           hostSessionId,
           terminalId,
-          sessionId,
           client.native,
         );
-        const state =
-          openCodeTranscriptService.getState(key) ||
-          loadingChatState(sessionId);
-        const presentation = requestedChatPresentation(state);
+        setBusy(false);
+      }
+      if (projection.type === 'bound') {
+        const presentation = requestedChatPresentation(projection.state);
+        recordAgentChatDiagnostic('open-bound', {
+          agent: projection.binding.agent,
+          bindingToken: agentChatDiagnosticToken(
+            projection.binding.bindingToken,
+          ),
+          phase: presentation.phase,
+          request,
+          state: projection.state.status,
+          stateRevision: projection.state.revision,
+          terminalId,
+        });
         setChatViews(current => {
           if (!requestIsCurrent()) return current;
           const next = new Map(current);
           next.set(terminalId, {
-            agent: 'opencode',
-            key,
+            binding: projection.binding,
             presentation,
-            state,
+            state: projection.state,
           });
           return next;
+        });
+        return;
+      }
+      if (agent === 'opencode') {
+        setAgentIdentityWarning({
+          agent: 'opencode',
+          title: 'OpenCode identity unavailable',
+          message:
+            'This OpenCode process has not reported a native session ID. Ensure the Herdr OpenCode integration is current, then restart OpenCode and try Chat again.',
         });
         return;
       }
       if (agent !== 'codex') return;
       const action = codexChatAction(chatPane);
-      if (action === 'open') {
-        const sessionId = codexSessionIdForPane(chatPane)!;
-        const key = codexTranscriptService.activate(
-          hostSessionId,
-          terminalId,
-          sessionId,
-          client.native,
-        );
-        const state =
-          codexTranscriptService.getState(key) || loadingChatState(sessionId);
-        const presentation = requestedChatPresentation(state);
-        setChatViews(current => {
-          if (!requestIsCurrent()) return current;
-          const next = new Map(current);
-          next.set(terminalId, {
-            agent: 'codex',
-            key,
-            presentation,
-            state,
-          });
-          return next;
-        });
-        return;
-      }
       if (action !== 'setup') return;
       const paneId = chatPane.pane_id;
       setBusy(true);
-      const integrationStatus = await client.native.agentIntegrationStatus('codex');
+      const integrationStatus = await client.native.agentIntegrationStatus(
+        'codex',
+      );
       if (!requestIsCurrent()) return;
       const missingIdentityAction =
         codexMissingIdentityAction(integrationStatus);
@@ -1642,10 +1572,7 @@ export function SessionScreen({
         className="relative flex-1 overflow-hidden bg-transparent"
         onTouchStart={() => registerInteraction()}
       >
-        <View
-          pointerEvents="box-none"
-          className="absolute inset-0"
-        >
+        <View pointerEvents="box-none" className="absolute inset-0">
           <TerminalScreen
             activeTarget={activeTarget}
             targets={terminalTargets}
@@ -1707,11 +1634,12 @@ export function SessionScreen({
               chatViewportMounted && activeChatView && activePane
                 ? (insets, latestButtonBottom) => (
                     <AgentChatView
-                      key={`${activeChatView.agent}:${activeChatView.key || ''}:${
-                        activeChatView.state.sessionId
-                      }:${activeChatView.presentation.generation}`}
+                      key={[
+                        activeChatView.binding.bindingToken,
+                        activeChatView.presentation.generation,
+                      ].join(':')}
                       state={activeChatView.state}
-                      agent={activeChatView.agent}
+                      agent={activeChatView.binding.agent}
                       agentStatus={activePane.agent_status}
                       contentInsets={insets}
                       latestButtonBottom={latestButtonBottom}
@@ -1720,24 +1648,62 @@ export function SessionScreen({
                         const terminalId = activeTerminalSession?.terminalId;
                         const generation =
                           activeChatView.presentation.generation;
+                        recordAgentChatDiagnostic(
+                          'initial-viewport-callback-received',
+                          {
+                            activeTerminalId: activeTerminalIdRef.current,
+                            bindingToken: agentChatDiagnosticToken(
+                              activeChatView.binding.bindingToken,
+                            ),
+                            generation,
+                            terminalId,
+                          },
+                        );
                         if (
                           !terminalId ||
                           activeTerminalIdRef.current !== terminalId
-                        ) return;
+                        ) {
+                          recordAgentChatDiagnostic(
+                            'initial-viewport-callback-rejected',
+                            {
+                              reason: 'terminal-changed',
+                              terminalId,
+                            },
+                          );
+                          return;
+                        }
                         setChatViews(current => {
                           const view = current.get(terminalId);
                           if (
-                            view?.agent !== activeChatView.agent ||
-                            view.key !== activeChatView.key ||
-                            view.state.sessionId !==
-                              activeChatView.state.sessionId ||
+                            view?.binding.bindingToken !==
+                              activeChatView.binding.bindingToken ||
                             agentTranscriptReadiness(view.state) !== 'usable'
-                          ) return current;
+                          ) {
+                            recordAgentChatDiagnostic(
+                              'initial-viewport-callback-rejected',
+                              {
+                                reason: 'binding-or-readiness-changed',
+                                terminalId,
+                              },
+                            );
+                            return current;
+                          }
                           const presentation = revealPreparedChat(
                             view.presentation,
                             generation,
                           );
-                          if (presentation === view.presentation) return current;
+                          if (presentation === view.presentation)
+                            return current;
+                          recordAgentChatDiagnostic(
+                            'initial-viewport-revealed',
+                            {
+                              bindingToken: agentChatDiagnosticToken(
+                                view.binding.bindingToken,
+                              ),
+                              generation,
+                              terminalId,
+                            },
+                          );
                           const next = new Map(current);
                           next.set(terminalId, { ...view, presentation });
                           return next;
@@ -1916,8 +1882,7 @@ export function SessionScreen({
                 <View className="relative flex-1 bg-white">
                   <WebView
                     ref={value => {
-                      browserWebView.current =
-                        value;
+                      browserWebView.current = value;
                     }}
                     source={{ uri: browserUrl }}
                     javaScriptEnabled

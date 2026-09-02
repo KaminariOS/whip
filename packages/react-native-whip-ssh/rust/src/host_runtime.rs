@@ -18,11 +18,15 @@ use std::time::Duration;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
-use crate::agent_sessions::AgentSessionManager;
+use crate::agent_sessions::{AgentSessionManager, AuthoritativeAgentChatIdentity};
+use crate::agent_transcript::AgentTranscriptKind;
+use crate::herdr_api::{HerdrAgentSessionKind, HerdrPaneInfo};
 use crate::herdr_connection::HerdrConnection;
 use crate::herdr_events::close_herdr_event_subscription;
 use crate::herdr_terminal::{HerdrBridgeId, close_all_herdr_terminal_bridges};
-use crate::host_state::{AgentStatusTransition, HostState, HostStateSnapshot};
+use crate::host_state::{
+    AgentStatusTransition, HostFreshness, HostState, HostStateSnapshot, HostSyncStatus,
+};
 use crate::remote_ops::{PreviewState, RemoteOperationManager, TransferProgress};
 use crate::ssh::{SshErrorCode, SshFailure, SshSession, SshShellClose};
 #[cfg(test)]
@@ -577,6 +581,28 @@ fn publish_lifecycle_status(inner: &RuntimeInner) {
     });
 }
 
+fn authoritative_agent_chat_identity(
+    pane: &HerdrPaneInfo,
+) -> Option<AuthoritativeAgentChatIdentity> {
+    let session = pane.agent_session.as_ref()?;
+    if session.kind != HerdrAgentSessionKind::Id {
+        return None;
+    }
+    let agent = if session.agent.eq_ignore_ascii_case("codex") {
+        AgentTranscriptKind::Codex
+    } else if session.agent.eq_ignore_ascii_case("opencode") {
+        AgentTranscriptKind::OpenCode
+    } else {
+        return None;
+    };
+    Some(AuthoritativeAgentChatIdentity {
+        terminal_id: pane.terminal_id.clone(),
+        pane_id: pane.pane_id.clone(),
+        agent,
+        session_id: session.value.trim().to_owned(),
+    })
+}
+
 fn emit_host_state(inner: &RuntimeInner) {
     let (state, agent_status_transitions) = {
         let mut runtime = inner.state.lock();
@@ -585,6 +611,20 @@ fn emit_host_state(inner: &RuntimeInner) {
         drop(runtime);
         (state, transitions)
     };
+    if state.sync_status == HostSyncStatus::Synced
+        && state.freshness == HostFreshness::Fresh
+        && let Some(snapshot) = state.snapshot.as_ref()
+    {
+        let identities = snapshot
+            .panes
+            .iter()
+            .filter_map(|pane| {
+                authoritative_agent_chat_identity(pane)
+                    .map(|identity| (pane.terminal_id.clone(), identity))
+            })
+            .collect::<HashMap<_, _>>();
+        inner.agents.reconcile_authoritative_bindings(&identities);
+    }
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,

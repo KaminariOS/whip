@@ -1,11 +1,14 @@
 import { agentChatCache, type AgentChatCache } from './agentChatCache';
-import { NativeTranscriptService } from './CodexTranscriptService';
+import {
+  NativeTranscriptService,
+  agentTranscriptService,
+} from './CodexTranscriptService';
 
-/** Thin React listener/cache facade; OpenCode export and DB events live in Rust. */
+/** @deprecated Agent identity is resolved by Rust; kept as a test-compatible name. */
 export class OpenCodeTranscriptService extends NativeTranscriptService {
   constructor(cache: AgentChatCache = agentChatCache) {
-    super('opencode', cache);
+    super(cache);
   }
 }
 
-export const openCodeTranscriptService = new OpenCodeTranscriptService();
+export const openCodeTranscriptService = agentTranscriptService;

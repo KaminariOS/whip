@@ -1,8 +1,11 @@
 //! Agent launch, paste submission, and integration behavior.
 
 use super::*;
-use crate::agent_sessions::{AgentSessionError, AgentSessionOpenResult};
-use crate::agent_transcript::{AgentTranscriptKind, AgentTranscriptState};
+use crate::agent_sessions::{
+    AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
+    AgentSessionError,
+};
+use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
     HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
     HerdrIntegrationInstallResult, HerdrTabLaunch, HerdrTabLaunchResult, HerdrTabLaunchStage,
@@ -277,67 +280,55 @@ pub(super) async fn submit_pastes_inner(
 }
 #[uniffi::export]
 impl HostRuntime {
-    pub fn open_agent_session(
+    pub fn open_agent_chat(
         &self,
-        agent: AgentTranscriptKind,
         terminal_id: String,
-        session_id: String,
-        cache_blob: Option<Vec<u8>>,
-    ) -> Result<AgentSessionOpenResult, AgentSessionError> {
-        match agent {
-            AgentTranscriptKind::Codex => {
-                let (key, state) =
-                    self.inner
-                        .agents
-                        .open_codex(terminal_id, session_id, cache_blob)?;
-                Ok(AgentSessionOpenResult {
-                    runtime_incarnation: self.inner.incarnation,
-                    key,
-                    state,
-                })
+    ) -> Result<AgentChatOpenResult, AgentSessionError> {
+        let identity = {
+            let host = self.inner.state.lock().host_state.projection();
+            if host.sync_status != HostSyncStatus::Synced || host.freshness != HostFreshness::Fresh
+            {
+                return Ok(AgentChatOpenResult::NoChat {
+                    terminal_id,
+                    reason: AgentChatUnavailableReason::HostStateUnavailable,
+                });
             }
-            AgentTranscriptKind::OpenCode => {
-                let (key, state) =
-                    self.inner
-                        .agents
-                        .open_opencode(terminal_id, session_id, cache_blob)?;
-                Ok(AgentSessionOpenResult {
-                    runtime_incarnation: self.inner.incarnation,
-                    key,
-                    state,
-                })
-            }
-        }
-    }
-
-    pub fn bind_agent_session(
-        &self,
-        agent: AgentTranscriptKind,
-        terminal_id: String,
-        session_id: String,
-    ) -> Result<AgentSessionOpenResult, AgentSessionError> {
-        let (key, state) = match agent {
-            AgentTranscriptKind::Codex => self.inner.agents.bind_codex(terminal_id, session_id)?,
-            AgentTranscriptKind::OpenCode => {
-                self.inner.agents.bind_opencode(terminal_id, session_id)?
-            }
+            let Some(pane) = host.snapshot.as_ref().and_then(|snapshot| {
+                snapshot
+                    .panes
+                    .iter()
+                    .find(|pane| pane.terminal_id == terminal_id)
+            }) else {
+                return Ok(AgentChatOpenResult::NoChat {
+                    terminal_id,
+                    reason: AgentChatUnavailableReason::TerminalNotFound,
+                });
+            };
+            let Some(identity) = authoritative_agent_chat_identity(pane) else {
+                return Ok(AgentChatOpenResult::NoChat {
+                    terminal_id,
+                    reason: AgentChatUnavailableReason::UnsupportedPane,
+                });
+            };
+            identity
         };
-        Ok(AgentSessionOpenResult {
-            runtime_incarnation: self.inner.incarnation,
-            key,
-            state,
-        })
+        let binding = self.inner.agents.bind_authoritative(identity)?;
+        Ok(AgentChatOpenResult::Bound { binding })
     }
 
-    pub fn start_agent_session(
+    pub fn start_agent_chat(
         &self,
-        terminal_id: String,
-        key: String,
+        binding_token: String,
         cache_blob: Option<Vec<u8>>,
-    ) -> Result<AgentTranscriptState, AgentSessionError> {
-        self.inner
-            .agents
-            .start_bound(&terminal_id, &key, cache_blob)
+    ) -> Result<AgentChatStartResult, AgentSessionError> {
+        self.inner.agents.start_bound(&binding_token, cache_blob)
+    }
+
+    /// Return the current Rust-owned binding without creating or reopening it.
+    /// Presentation reconciliation must use this projection rather than the
+    /// explicit `open_agent_chat` operation.
+    pub fn current_agent_chat(&self, terminal_id: String) -> Option<AgentChatBinding> {
+        self.inner.agents.terminal_binding(&terminal_id)
     }
 
     pub fn agent_transcript(&self, key: String) -> Result<AgentTranscriptState, AgentSessionError> {
@@ -346,12 +337,10 @@ impl HostRuntime {
         })
     }
 
-    pub fn close_agent_session(&self, key: String) {
-        self.inner.agents.close_session(&key);
-    }
-
-    pub fn close_agent_terminal(&self, terminal_id: String) -> Option<String> {
-        self.inner.agents.close_terminal(&terminal_id)
+    pub fn detach_agent_chat(&self, terminal_id: String) -> bool {
+        let was_bound = self.inner.agents.has_terminal_binding(&terminal_id);
+        self.inner.agents.close_terminal(&terminal_id);
+        was_bound
     }
 
     pub fn confirm_agent_transcript_cache(&self, confirmation_token: String) -> bool {

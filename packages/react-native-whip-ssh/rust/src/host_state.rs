@@ -600,13 +600,22 @@ fn status_priority(status: HerdrAgentStatus) -> u8 {
 }
 
 fn normalize_snapshot(snapshot: &mut HerdrSessionSnapshot) {
-    for agent in &snapshot.agents {
-        if let Some(pane) = snapshot
+    for agent in &mut snapshot.agents {
+        let Some(pane) = snapshot
             .panes
             .iter_mut()
             .find(|pane| pane.pane_id == agent.pane_id)
-        {
-            pane.agent_session.clone_from(&agent.agent_session);
+        else {
+            continue;
+        };
+
+        // Pane state is the authoritative session identity once Herdr has
+        // reported one. Agent rows are an auxiliary projection and may omit
+        // the session during otherwise fresh status/control responses.
+        if let Some(session) = &pane.agent_session {
+            agent.agent_session = Some(session.clone());
+        } else if let Some(session) = &agent.agent_session {
+            pane.agent_session = Some(session.clone());
         }
     }
 
@@ -994,7 +1003,10 @@ fn update_agent_status(
     Ok(())
 }
 
-fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> Result<(), String> {
+fn upsert_agent(
+    snapshot: &mut HerdrSessionSnapshot,
+    mut agent: HerdrAgentInfo,
+) -> Result<(), String> {
     if !snapshot
         .panes
         .iter()
@@ -1011,13 +1023,16 @@ fn upsert_agent(snapshot: &mut HerdrSessionSnapshot, agent: HerdrAgentInfo) -> R
         agent.display_agent.as_ref(),
         agent.state_labels.as_ref(),
     )?;
-    snapshot
+    let pane = snapshot
         .panes
         .iter_mut()
         .find(|pane| pane.pane_id == agent.pane_id)
-        .ok_or_else(|| format!("agent references unknown pane {}", agent.pane_id))?
-        .agent_session
-        .clone_from(&agent.agent_session);
+        .ok_or_else(|| format!("agent references unknown pane {}", agent.pane_id))?;
+    if let Some(session) = &agent.agent_session {
+        pane.agent_session = Some(session.clone());
+    } else if let Some(session) = &pane.agent_session {
+        agent.agent_session = Some(session.clone());
+    }
     if let Some(current) = snapshot
         .agents
         .iter_mut()
@@ -2143,6 +2158,159 @@ mod tests {
                 .map(|session| session.value.as_str()),
             Some("ses_123456789")
         );
+    }
+
+    #[test]
+    fn full_snapshot_does_not_erase_authoritative_pane_session_when_agent_row_omits_it() {
+        let session_id = "11111111-1111-4111-8111-111111111111";
+        let mut incoming = snapshot();
+        let mut incomplete_agent = agent("p1", HerdrAgentKind::Codex, session_id);
+        incoming.panes[0].agent_session = incomplete_agent.agent_session.clone();
+        incomplete_agent.agent_session = None;
+        incoming.agents.push(incomplete_agent);
+
+        let mut state = HostState::default();
+        state.connection_installed(1);
+        let token = state.begin_sync(1);
+        assert_eq!(
+            state.complete_sync(token, incoming, 10),
+            ApplyResult::Applied
+        );
+
+        let snapshot = state.snapshot.unwrap();
+        assert_eq!(
+            snapshot.panes[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some(session_id)
+        );
+        assert_eq!(
+            snapshot.agents[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some(session_id)
+        );
+    }
+
+    #[test]
+    fn incremental_agent_response_without_session_preserves_pane_identity() {
+        let session_id = "11111111-1111-4111-8111-111111111111";
+        let mut incoming = snapshot();
+        incoming
+            .agents
+            .push(agent("p1", HerdrAgentKind::Codex, session_id));
+        let mut state = HostState::default();
+        state.connection_installed(1);
+        let token = state.begin_sync(1);
+        assert_eq!(
+            state.complete_sync(token, incoming, 10),
+            ApplyResult::Applied
+        );
+
+        let mut incomplete_agent = agent("p1", HerdrAgentKind::Codex, session_id);
+        incomplete_agent.agent_session = None;
+        assert_eq!(
+            state.apply_control_result(
+                1,
+                &HerdrControlRequest::AgentPrompt {
+                    target: "p1".to_owned(),
+                    text: "status".to_owned(),
+                },
+                &HerdrControlResult::AgentPrompted {
+                    agent: incomplete_agent,
+                },
+            ),
+            ApplyResult::Applied
+        );
+
+        let snapshot = state.snapshot.unwrap();
+        assert_eq!(
+            snapshot.panes[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some(session_id)
+        );
+        assert_eq!(
+            snapshot.agents[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some(session_id)
+        );
+    }
+
+    #[test]
+    fn agent_metadata_without_any_session_does_not_create_a_chat_identity() {
+        let mut incoming = snapshot();
+        let mut metadata_only = agent(
+            "p1",
+            HerdrAgentKind::Codex,
+            "11111111-1111-4111-8111-111111111111",
+        );
+        metadata_only.agent_session = None;
+        metadata_only.display_agent = Some("Codex".to_owned());
+        incoming.agents.push(metadata_only);
+
+        let mut state = HostState::default();
+        state.connection_installed(1);
+        let token = state.begin_sync(1);
+        assert_eq!(
+            state.complete_sync(token, incoming, 10),
+            ApplyResult::Applied
+        );
+
+        let snapshot = state.snapshot.unwrap();
+        assert_eq!(snapshot.panes[0].agent_session, None);
+        assert_eq!(snapshot.agents[0].agent_session, None);
+    }
+
+    #[test]
+    fn pane_update_preserves_agent_row_session_identity() {
+        let session_id = "11111111-1111-4111-8111-111111111111";
+        let mut incoming = snapshot();
+        incoming
+            .agents
+            .push(agent("p1", HerdrAgentKind::Codex, session_id));
+        let mut state = HostState::default();
+        state.connection_installed(1);
+        let token = state.begin_sync(1);
+        assert_eq!(
+            state.complete_sync(token, incoming, 10),
+            ApplyResult::Applied
+        );
+        assert!(
+            state.snapshot.as_ref().unwrap().panes[0]
+                .agent_session
+                .is_some()
+        );
+
+        let mut updated = pane("p1", "w1", "t1", HerdrAgentStatus::Idle);
+        updated.agent = Some("codex".to_owned());
+        updated.display_agent = Some("Codex".to_owned());
+        assert_eq!(
+            state.apply_event(1, HerdrEvent::PaneUpdated { pane: updated }, 11),
+            ApplyResult::Applied
+        );
+
+        let snapshot = state.snapshot.unwrap();
+        assert_eq!(
+            snapshot.panes[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some(session_id)
+        );
+        assert_eq!(
+            snapshot.agents[0]
+                .agent_session
+                .as_ref()
+                .map(|session| session.value.as_str()),
+            Some(session_id)
+        );
+        assert_eq!(snapshot.panes[0].display_agent.as_deref(), Some("Codex"));
     }
 
     #[test]

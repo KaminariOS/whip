@@ -4,10 +4,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use super::*;
+use crate::agent_sessions::{
+    AgentChatBinding, AgentChatOpenResult, AgentChatStartResult, AgentChatUnavailableReason,
+};
+use crate::agent_transcript::AgentTranscriptStatus;
 use crate::herdr_api::{
-    HerdrAgentKind, HerdrAgentStatus, HerdrControlError, HerdrControlRequest, HerdrControlResult,
-    HerdrPaneInfo, HerdrSessionSnapshot, HerdrTabInfo, HerdrTabLaunch, HerdrTabLaunchStage,
-    HerdrWorkspaceInfo,
+    HerdrAgentKind, HerdrAgentSessionInfo, HerdrAgentSessionKind, HerdrAgentStatus,
+    HerdrControlError, HerdrControlRequest, HerdrControlResult, HerdrPaneInfo,
+    HerdrSessionSnapshot, HerdrTabInfo, HerdrTabLaunch, HerdrTabLaunchStage, HerdrWorkspaceInfo,
 };
 use crate::herdr_codec::{MAX_PROTOCOL, MIN_PROTOCOL};
 use crate::herdr_connection::HerdrRequestReplay;
@@ -576,6 +580,183 @@ fn batch_test_snapshot() -> HerdrSessionSnapshot {
         panes: vec![pane("pane-1"), pane("pane-2")],
         layouts: Vec::new(),
     }
+}
+
+fn agent_chat_snapshot(
+    agent: Option<(&str, &str)>,
+    display_agent: Option<&str>,
+) -> HerdrSessionSnapshot {
+    let mut snapshot = batch_test_snapshot();
+    let pane = &mut snapshot.panes[0];
+    pane.agent = display_agent.map(str::to_owned);
+    pane.display_agent = display_agent.map(str::to_owned);
+    pane.agent_session = agent.map(|(agent, value)| HerdrAgentSessionInfo {
+        source: format!("herdr:{agent}"),
+        agent: agent.to_owned(),
+        kind: HerdrAgentSessionKind::Id,
+        value: value.to_owned(),
+    });
+    snapshot
+}
+
+fn install_agent_chat_snapshot(inner: &Arc<RuntimeInner>, snapshot: HerdrSessionSnapshot) {
+    {
+        let mut state = inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        assert_eq!(
+            state.host_state.complete_sync(token, snapshot, 1),
+            ApplyResult::Applied
+        );
+    }
+    emit_host_state(inner);
+}
+
+fn bound(result: AgentChatOpenResult) -> AgentChatBinding {
+    match result {
+        AgentChatOpenResult::Bound { binding } => binding,
+        AgentChatOpenResult::NoChat { reason, .. } => {
+            panic!("expected an agent Chat binding, got {reason:?}")
+        }
+    }
+}
+
+#[test]
+fn agent_chat_resolution_uses_authoritative_codex_and_opencode_sessions() {
+    let codex = "11111111-1111-4111-8111-111111111111";
+    let inner = connected_runtime_inner("agent-chat-resolution");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(Some(("codex", codex)), None));
+
+    let binding = bound(
+        runtime
+            .open_agent_chat("terminal-pane-1".to_owned())
+            .unwrap(),
+    );
+    assert_eq!(binding.pane_id, "pane-1");
+    assert_eq!(binding.agent, AgentTranscriptKind::Codex);
+    assert_eq!(binding.session_id, codex);
+    assert_eq!(
+        binding.transcript_key,
+        format!("agent-chat-resolution\ncodex\n{codex}")
+    );
+
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("opencode", "ses_abc123")), None),
+    );
+    let replacement = runtime
+        .current_agent_chat("terminal-pane-1".to_owned())
+        .expect("HostState reconciliation should replace the binding");
+    assert_eq!(replacement.agent, AgentTranscriptKind::OpenCode);
+    assert_eq!(replacement.session_id, "ses_abc123");
+    assert_ne!(replacement.binding_token, binding.binding_token);
+    assert!(matches!(
+        runtime
+            .start_agent_chat(binding.binding_token, None)
+            .unwrap(),
+        AgentChatStartResult::StaleBinding
+    ));
+}
+
+#[test]
+fn normal_or_cosmetically_stale_pane_cannot_create_agent_chat() {
+    let inner = connected_runtime_inner("normal-pane-agent-chat");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, Some("Codex")));
+
+    assert!(matches!(
+        runtime
+            .open_agent_chat("terminal-pane-1".to_owned())
+            .unwrap(),
+        AgentChatOpenResult::NoChat {
+            reason: AgentChatUnavailableReason::UnsupportedPane,
+            ..
+        }
+    ));
+    assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
+}
+
+#[test]
+fn releasing_terminal_renderer_bridge_does_not_detach_agent_chat() {
+    let session_id = "11111111-1111-4111-8111-111111111111";
+    let inner = connected_runtime_inner("agent-chat-renderer-release");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(
+        &inner,
+        agent_chat_snapshot(Some(("codex", session_id)), None),
+    );
+    let binding = bound(
+        runtime
+            .open_agent_chat("terminal-pane-1".to_owned())
+            .unwrap(),
+    );
+
+    runtime.close_terminal("terminal-pane-1".to_owned());
+
+    let retained = runtime
+        .current_agent_chat("terminal-pane-1".to_owned())
+        .expect("renderer transport release must retain the Chat binding");
+    assert_eq!(retained.binding_token, binding.binding_token);
+    assert_eq!(retained.session_id, session_id);
+
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
+    assert!(
+        runtime
+            .current_agent_chat("terminal-pane-1".to_owned())
+            .is_none(),
+        "authoritative pane identity removal must still detach Chat"
+    );
+}
+
+#[test]
+fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
+    let first = "11111111-1111-4111-8111-111111111111";
+    let second = "22222222-2222-4222-8222-222222222222";
+    let inner = connected_runtime_inner("agent-chat-reconcile");
+    let runtime = HostRuntime {
+        inner: inner.clone(),
+    };
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(Some(("codex", first)), None));
+    let original = bound(
+        runtime
+            .open_agent_chat("terminal-pane-1".to_owned())
+            .unwrap(),
+    );
+
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(Some(("codex", second)), None));
+    let rebound = runtime
+        .current_agent_chat("terminal-pane-1".to_owned())
+        .expect("HostState reconciliation should replace the binding");
+    assert_eq!(rebound.session_id, second);
+    assert_ne!(rebound.binding_token, original.binding_token);
+    assert_eq!(
+        inner.agents.state(&original.transcript_key).unwrap().status,
+        AgentTranscriptStatus::Closed
+    );
+
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
+    assert!(!inner.agents.has_terminal_binding("terminal-pane-1"));
+    assert!(
+        runtime
+            .current_agent_chat("terminal-pane-1".to_owned())
+            .is_none()
+    );
+    assert_eq!(
+        inner.agents.state(&rebound.transcript_key).unwrap().status,
+        AgentTranscriptStatus::Closed
+    );
+    assert!(matches!(
+        runtime
+            .open_agent_chat("terminal-pane-1".to_owned())
+            .unwrap(),
+        AgentChatOpenResult::NoChat { .. }
+    ));
 }
 
 fn agent_status_event(pane_id: &str, status: HerdrAgentStatus) -> HerdrEvent {

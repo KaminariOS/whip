@@ -7,6 +7,9 @@ import {
   AgentIntegrationStatus,
   AgentToolStatus,
   AgentTranscriptKind,
+  AgentChatOpenResult_Tags,
+  AgentChatStartResult_Tags,
+  AgentChatUnavailableReason,
   AgentTranscriptDelta_Tags,
   AgentTranscriptPart_Tags,
   AgentTranscriptStatus,
@@ -91,6 +94,7 @@ import {
   type TransferResult as NativeTransferResult,
   type PairHostResult as NativePairHostResult,
   type AgentTranscriptEvent,
+  type AgentChatBinding,
   type AgentTranscriptDelta,
   type AgentTranscriptMessage,
   type AgentTranscriptState,
@@ -136,38 +140,65 @@ type WhipTerminalInboundTrace = {
 };
 
 const bridgeHandlers = new Map<string, Map<string, BridgeHandler>>();
-const runtimeHandlers = new Map<string, (event: RuntimeLifecycleEvent) => void>();
-const agentTranscriptHandlers = new Map<string, Map<string, (event: NativeAgentTranscriptUpdate) => void>>();
-const runtimeSshShellHandlers = new Map<string, Map<string, RuntimeSshShellHandler>>();
+const runtimeHandlers = new Map<
+  string,
+  (event: RuntimeLifecycleEvent) => void
+>();
+const agentTranscriptHandlers = new Map<
+  string,
+  Map<string, (event: NativeAgentTranscriptUpdate) => void>
+>();
+const runtimeSshShellHandlers = new Map<
+  string,
+  Map<string, RuntimeSshShellHandler>
+>();
 
-function transcriptRoutingKey(runtimeId: string, runtimeIncarnation: number): string {
+function transcriptRoutingKey(
+  runtimeId: string,
+  runtimeIncarnation: number,
+): string {
   return `${runtimeId}\n${runtimeIncarnation}`;
 }
 
-function runtimeConnectionState(state: HostConnectionState): RuntimeConnectionState {
+function runtimeConnectionState(
+  state: HostConnectionState,
+): RuntimeConnectionState {
   switch (state) {
-    case HostConnectionState.Disconnected: return 'disconnected';
-    case HostConnectionState.Connecting: return 'connecting';
-    case HostConnectionState.Connected: return 'connected';
-    case HostConnectionState.Reconnecting: return 'reconnecting';
-    case HostConnectionState.Disconnecting: return 'disconnecting';
-    case HostConnectionState.Failed: return 'failed';
+    case HostConnectionState.Disconnected:
+      return 'disconnected';
+    case HostConnectionState.Connecting:
+      return 'connecting';
+    case HostConnectionState.Connected:
+      return 'connected';
+    case HostConnectionState.Reconnecting:
+      return 'reconnecting';
+    case HostConnectionState.Disconnecting:
+      return 'disconnecting';
+    case HostConnectionState.Failed:
+      return 'failed';
   }
   throw new Error(`Unknown native host connection state: ${state}`);
 }
 
 function runtimeTerminalState(state: HostTerminalState): RuntimeTerminalState {
   switch (state) {
-    case HostTerminalState.Opening: return 'opening';
-    case HostTerminalState.Attached: return 'attached';
-    case HostTerminalState.Restoring: return 'restoring';
-    case HostTerminalState.Closed: return 'closed';
-    case HostTerminalState.Failed: return 'failed';
+    case HostTerminalState.Opening:
+      return 'opening';
+    case HostTerminalState.Attached:
+      return 'attached';
+    case HostTerminalState.Restoring:
+      return 'restoring';
+    case HostTerminalState.Closed:
+      return 'closed';
+    case HostTerminalState.Failed:
+      return 'failed';
   }
   throw new Error(`Unknown native terminal state: ${state}`);
 }
 
-function runtimeTerminalGeometry(value: HostTerminalGeometry): RuntimeTerminalGeometry {
+function runtimeTerminalGeometry(
+  value: HostTerminalGeometry,
+): RuntimeTerminalGeometry {
   return {
     columns: value.columns,
     rows: value.rows,
@@ -180,9 +211,12 @@ function runtimeTerminalResizeOutcome(
   value: HostTerminalResizeOutcome,
 ): RuntimeTerminalResizeOutcome {
   switch (value) {
-    case HostTerminalResizeOutcome.Deferred: return 'deferred';
-    case HostTerminalResizeOutcome.Deduplicated: return 'deduplicated';
-    case HostTerminalResizeOutcome.Dispatched: return 'dispatched';
+    case HostTerminalResizeOutcome.Deferred:
+      return 'deferred';
+    case HostTerminalResizeOutcome.Deduplicated:
+      return 'deduplicated';
+    case HostTerminalResizeOutcome.Dispatched:
+      return 'dispatched';
   }
 }
 
@@ -221,9 +255,19 @@ export type NativeAgentTranscriptPart =
   | { type: 'text'; id: string; text: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
   | { type: 'plan'; id: string; text: string; timestamp?: number }
-  | { type: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string; timestamp?: number }
   | {
-      type: 'tool'; id: string; callId: string; tool: string; timestamp?: number;
+      type: 'notice';
+      id: string;
+      level: 'info' | 'warning' | 'error';
+      text: string;
+      timestamp?: number;
+    }
+  | {
+      type: 'tool';
+      id: string;
+      callId: string;
+      tool: string;
+      timestamp?: number;
       state: NativeAgentToolState;
     };
 
@@ -232,35 +276,60 @@ export type NativeAgentTranscriptState = {
   agent: 'codex' | 'opencode';
   revision: number;
   status: 'loading' | 'live' | 'stale' | 'unavailable' | 'error' | 'closed';
-  info?: { id: string; title?: string; directory?: string; createdAt?: number; updatedAt?: number };
+  info?: {
+    id: string;
+    title?: string;
+    directory?: string;
+    createdAt?: number;
+    updatedAt?: number;
+  };
   messages: Array<{
-    id: string; role: 'user' | 'assistant'; parentId?: string;
-    createdAt?: number; completedAt?: number; error?: string;
+    id: string;
+    role: 'user' | 'assistant';
+    parentId?: string;
+    createdAt?: number;
+    completedAt?: number;
+    error?: string;
     parts: NativeAgentTranscriptPart[];
     diffs: NativeAgentFileDiff[];
   }>;
   turns: Array<{
-    id: string; userMessageId?: string; assistantMessageIds: string[];
+    id: string;
+    userMessageId?: string;
+    assistantMessageIds: string[];
     status: 'idle' | 'working' | 'interrupted' | 'error';
-    startedAt?: number; completedAt?: number;
+    startedAt?: number;
+    completedAt?: number;
     diffs: NativeAgentFileDiff[];
   }>;
   error?: string;
 };
 
-export type NativeAgentTranscriptMessage = NativeAgentTranscriptState['messages'][number];
-export type NativeAgentTranscriptTurn = NativeAgentTranscriptState['turns'][number];
-export type NativeAgentTranscriptInfo = NonNullable<NativeAgentTranscriptState['info']>;
+export type NativeAgentTranscriptMessage =
+  NativeAgentTranscriptState['messages'][number];
+export type NativeAgentTranscriptTurn =
+  NativeAgentTranscriptState['turns'][number];
+export type NativeAgentTranscriptInfo = NonNullable<
+  NativeAgentTranscriptState['info']
+>;
 
 export type NativeAgentTranscriptDelta =
   | { type: 'reset'; state: NativeAgentTranscriptState }
   | { type: 'info-changed'; info?: NativeAgentTranscriptInfo }
-  | { type: 'message-upserted'; index: number; message: NativeAgentTranscriptMessage }
+  | {
+      type: 'message-upserted';
+      index: number;
+      message: NativeAgentTranscriptMessage;
+    }
   | { type: 'message-removed'; index: number; messageId: string }
   | { type: 'messages-truncated'; length: number }
   | { type: 'turn-upserted'; index: number; turn: NativeAgentTranscriptTurn }
   | { type: 'turns-truncated'; length: number }
-  | { type: 'status-changed'; status: NativeAgentTranscriptState['status']; error?: string };
+  | {
+      type: 'status-changed';
+      status: NativeAgentTranscriptState['status'];
+      error?: string;
+    };
 
 export type NativeAgentTranscriptUpdate = {
   runtimeIncarnation: number;
@@ -274,6 +343,33 @@ export type NativeAgentTranscriptUpdate = {
     confirmationToken: string;
   };
 };
+
+export type NativeAgentChatBinding = {
+  runtimeIncarnation: number;
+  bindingToken: string;
+  bindingGeneration: number;
+  terminalId: string;
+  paneId: string;
+  agent: 'codex' | 'opencode';
+  sessionId: string;
+  transcriptKey: string;
+  state: NativeAgentTranscriptState;
+};
+
+export type NativeAgentChatOpenResult =
+  | { type: 'bound'; binding: NativeAgentChatBinding }
+  | {
+      type: 'no-chat';
+      terminalId: string;
+      reason:
+        | 'host-state-unavailable'
+        | 'terminal-not-found'
+        | 'unsupported-pane';
+    };
+
+export type NativeAgentChatStartResult =
+  | { type: 'started'; state: NativeAgentTranscriptState }
+  | { type: 'stale-binding' };
 
 export type RuntimeSshConfig = {
   host: string;
@@ -323,7 +419,12 @@ export type RuntimeTabLaunchFailure = Error & {
   launchType?: 'agent' | 'command';
   nativeFailure?: unknown;
 };
-export type RuntimeTerminalState = 'opening' | 'attached' | 'restoring' | 'closed' | 'failed';
+export type RuntimeTerminalState =
+  | 'opening'
+  | 'attached'
+  | 'restoring'
+  | 'closed'
+  | 'failed';
 
 export type RuntimeAgentStatusTransition = {
   paneId: string;
@@ -333,16 +434,43 @@ export type RuntimeAgentStatusTransition = {
 };
 
 export type RuntimeLifecycleEvent =
-  | { type: 'connection-state'; state: RuntimeConnectionState; generation: number; reconnectAttempt: number; error?: string }
-  | { type: 'reconnect-scheduled'; attempt: number; delayMs: number; reason: string }
+  | {
+      type: 'connection-state';
+      state: RuntimeConnectionState;
+      generation: number;
+      reconnectAttempt: number;
+      error?: string;
+    }
+  | {
+      type: 'reconnect-scheduled';
+      attempt: number;
+      delayMs: number;
+      reason: string;
+    }
   | { type: 'reconnected'; generation: number; restoredTerminals: number }
-  | { type: 'terminal-state'; terminalId: string; state: RuntimeTerminalState; reconnectAttempt: number; retrying: boolean; error?: string }
-  | { type: 'host-state'; state: RuntimeHostState; agentStatusTransitions: RuntimeAgentStatusTransition[] }
+  | {
+      type: 'terminal-state';
+      terminalId: string;
+      state: RuntimeTerminalState;
+      reconnectAttempt: number;
+      retrying: boolean;
+      error?: string;
+    }
+  | {
+      type: 'host-state';
+      state: RuntimeHostState;
+      agentStatusTransitions: RuntimeAgentStatusTransition[];
+    }
   | { type: 'latency-measured'; measurement: RuntimeHostLatencyMeasurement }
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
-  | { type: 'preview-state'; previewId: string; state: RuntimePreviewState; error?: string }
+  | {
+      type: 'preview-state';
+      previewId: string;
+      state: RuntimePreviewState;
+      error?: string;
+    }
   | { type: 'diagnostic'; diagnostic: RuntimeDiagnostic }
   | { type: 'fatal-error'; message: string };
 
@@ -374,7 +502,12 @@ export type RuntimeHostLatencyMeasurement = {
   runtimeOverheadMs: number;
 };
 
-export type RuntimeTransferState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type RuntimeTransferState =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 export type RuntimePreviewState = 'running' | 'disconnected' | 'stopped';
 export type RuntimeRemoteFileKind = 'file' | 'directory' | 'symlink' | 'other';
 
@@ -418,7 +551,13 @@ export type RuntimeGitStatusEntry = {
   originalPath: string | null;
   absolutePath: string;
 };
-export type RuntimeGitDiffRowKind = 'header' | 'hunk' | 'context' | 'addition' | 'deletion' | 'meta';
+export type RuntimeGitDiffRowKind =
+  | 'header'
+  | 'hunk'
+  | 'context'
+  | 'addition'
+  | 'deletion'
+  | 'meta';
 export type RuntimeGitDiff = {
   kind: 'text' | 'binary' | 'empty';
   rows: Array<{
@@ -452,10 +591,18 @@ export type RuntimeTerminalGeometry = {
   cellHeightPx: number;
 };
 
-export type RuntimeTerminalResizeOutcome = 'deferred' | 'deduplicated' | 'dispatched';
+export type RuntimeTerminalResizeOutcome =
+  | 'deferred'
+  | 'deduplicated'
+  | 'dispatched';
 
 /** Stable app-facing DTOs projected from Rust's normalized Herdr domain model. */
-export type WhipAgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
+export type WhipAgentStatus =
+  | 'idle'
+  | 'working'
+  | 'blocked'
+  | 'done'
+  | 'unknown';
 
 export type WhipAgentSessionInfo = {
   source: string;
@@ -593,18 +740,49 @@ export type WhipHostSnapshot = {
 
 export type RuntimeHerdrRequest =
   | { method: 'ping' | 'session.snapshot'; params: Record<string, never> }
-  | { method: 'workspace.create'; params: { label: string | null; cwd: string | null; focus?: boolean } }
-  | { method: 'workspace.focus' | 'workspace.close'; params: { workspace_id: string } }
-  | { method: 'workspace.rename'; params: { workspace_id: string; label: string } }
-  | { method: 'tab.create'; params: { workspace_id: string; label: string | null; focus?: boolean } }
+  | {
+      method: 'workspace.create';
+      params: { label: string | null; cwd: string | null; focus?: boolean };
+    }
+  | {
+      method: 'workspace.focus' | 'workspace.close';
+      params: { workspace_id: string };
+    }
+  | {
+      method: 'workspace.rename';
+      params: { workspace_id: string; label: string };
+    }
+  | {
+      method: 'tab.create';
+      params: { workspace_id: string; label: string | null; focus?: boolean };
+    }
   | { method: 'tab.focus' | 'tab.close'; params: { tab_id: string } }
   | { method: 'tab.rename'; params: { tab_id: string; label: string } }
-  | { method: 'pane.read'; params: { pane_id: string; lines: number; source?: string; format?: string; strip_ansi?: boolean } }
+  | {
+      method: 'pane.read';
+      params: {
+        pane_id: string;
+        lines: number;
+        source?: string;
+        format?: string;
+        strip_ansi?: boolean;
+      };
+    }
   | { method: 'pane.focus' | 'pane.close'; params: { pane_id: string } }
   | { method: 'pane.rename'; params: { pane_id: string; label: string | null } }
-  | { method: 'pane.split'; params: { target_pane_id: string; direction: 'right' | 'down'; focus?: boolean } }
+  | {
+      method: 'pane.split';
+      params: {
+        target_pane_id: string;
+        direction: 'right' | 'down';
+        focus?: boolean;
+      };
+    }
   | { method: 'pane.zoom'; params: { pane_id: string; mode?: 'toggle' } }
-  | { method: 'pane.send_input'; params: { pane_id: string; text: string; keys: string[] } }
+  | {
+      method: 'pane.send_input';
+      params: { pane_id: string; text: string; keys: string[] };
+    }
   | { method: 'pane.send_text'; params: { pane_id: string; text: string } }
   | { method: 'pane.send_keys'; params: { pane_id: string; keys: string[] } }
   | { method: 'agent.focus'; params: { target: string } }
@@ -635,7 +813,11 @@ export type RuntimeHerdrResult =
   | { type: 'agent_started'; agent: WhipAgentInfo; argv: string[] }
   | { type: 'agent_info'; agent: WhipAgentInfo }
   | { type: 'agent_prompted'; agent: WhipAgentInfo }
-  | { type: 'integration_install'; target: RuntimeAgentKind; details: { messages: string[] } }
+  | {
+      type: 'integration_install';
+      target: RuntimeAgentKind;
+      details: { messages: string[] };
+    }
   | { type: 'pane_zoom' }
   | { type: 'ok' };
 
@@ -788,7 +970,8 @@ function nativeHostProfile(value: NativeHostProfileRecord): NativeHostProfile {
 function rustHostProfile(value: NativeHostProfile): NativeHostProfileRecord {
   return {
     ...value,
-    authMode: value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
+    authMode:
+      value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
   };
 }
 
@@ -816,7 +999,9 @@ export type KnownHostMutation = {
   view: KnownHostStoreView;
 };
 
-function knownHostStoreView(value: NativeKnownHostStoreView): KnownHostStoreView {
+function knownHostStoreView(
+  value: NativeKnownHostStoreView,
+): KnownHostStoreView {
   return {
     revision: Number(value.revision),
     hosts: value.hosts,
@@ -837,24 +1022,37 @@ function runtimeSshConfig(value: RuntimeSshConfig) {
     host: value.host,
     port: value.port,
     username: value.username,
-    credential: value.authMode === 'password'
-      ? HostSshCredential.Password.new({ password: value.secret })
-      : HostSshCredential.Key.new({ privateKey: value.secret, passphrase: value.passphrase }),
+    credential:
+      value.authMode === 'password'
+        ? HostSshCredential.Password.new({ password: value.secret })
+        : HostSshCredential.Key.new({
+            privateKey: value.secret,
+            passphrase: value.passphrase,
+          }),
     forwardAgent: Boolean(value.forwardAgent),
   };
 }
 
 function terminalInboundTrace(): WhipTerminalInboundTrace | undefined {
-  return (globalThis as typeof globalThis & {
-    __whipTerminalInboundTrace?: WhipTerminalInboundTrace;
-  }).__whipTerminalInboundTrace;
+  return (
+    globalThis as typeof globalThis & {
+      __whipTerminalInboundTrace?: WhipTerminalInboundTrace;
+    }
+  ).__whipTerminalInboundTrace;
 }
 
-function bridgeHandler(clientKey: string, terminalId: string): BridgeHandler | undefined {
+function bridgeHandler(
+  clientKey: string,
+  terminalId: string,
+): BridgeHandler | undefined {
   return bridgeHandlers.get(clientKey)?.get(terminalId);
 }
 
-function setBridgeHandler(clientKey: string, terminalId: string, handler: BridgeHandler): void {
+function setBridgeHandler(
+  clientKey: string,
+  terminalId: string,
+  handler: BridgeHandler,
+): void {
   let handlers = bridgeHandlers.get(clientKey);
   if (!handlers) {
     handlers = new Map();
@@ -884,9 +1082,10 @@ function nativeErrorParts(error: unknown): { tag?: string; inner: unknown[] } {
 
 function bridgeError(error: unknown): Error {
   const nativeError = nativeErrorParts(error);
-  const message = typeof nativeError.inner[0] === 'string'
-    ? nativeError.inner[0]
-    : error instanceof Error
+  const message =
+    typeof nativeError.inner[0] === 'string'
+      ? nativeError.inner[0]
+      : error instanceof Error
       ? error.message
       : String(error);
   const result = new Error(message);
@@ -898,18 +1097,20 @@ function bridgeError(error: unknown): Error {
 function controlError(error: unknown): Error {
   const nativeError = nativeErrorParts(error);
   const protocolError = nativeError.tag === 'ProtocolError';
-  const message = protocolError && typeof nativeError.inner[1] === 'string'
-    ? nativeError.inner[1]
-    : typeof nativeError.inner[0] === 'string'
+  const message =
+    protocolError && typeof nativeError.inner[1] === 'string'
+      ? nativeError.inner[1]
+      : typeof nativeError.inner[0] === 'string'
       ? nativeError.inner[0]
       : error instanceof Error
-        ? error.message
-        : String(error);
+      ? error.message
+      : String(error);
   const result = new Error(message);
   result.name = 'HerdrControlError';
-  const code = protocolError && typeof nativeError.inner?.[0] === 'string'
-    ? nativeError.inner[0]
-    : nativeError.tag;
+  const code =
+    protocolError && typeof nativeError.inner?.[0] === 'string'
+      ? nativeError.inner[0]
+      : nativeError.tag;
   if (code) Object.assign(result, { code });
   return result;
 }
@@ -918,7 +1119,8 @@ const SSH_ERROR_CODES: Readonly<Partial<Record<number, string>>> = {
   [NativeSshErrorCode.AuthenticationFailed]: 'AUTHENTICATION_FAILED',
   [NativeSshErrorCode.HostKeyUnknown]: 'HOST_KEY_UNKNOWN',
   [NativeSshErrorCode.HostKeyChanged]: 'HOST_KEY_CHANGED',
-  [NativeSshErrorCode.UnsupportedHostCertificate]: 'UNSUPPORTED_HOST_CERTIFICATE',
+  [NativeSshErrorCode.UnsupportedHostCertificate]:
+    'UNSUPPORTED_HOST_CERTIFICATE',
   [NativeSshErrorCode.ConnectionRefused]: 'CONNECTION_REFUSED',
   [NativeSshErrorCode.ConnectionTimeout]: 'CONNECTION_TIMEOUT',
   [NativeSshErrorCode.HostUnreachable]: 'HOST_UNREACHABLE',
@@ -953,11 +1155,16 @@ function isUnknownArray(value: unknown): value is unknown[] {
 
 function hostKeyErrorCode(tag: string | undefined): string | undefined {
   switch (tag) {
-    case undefined: return undefined;
-    case 'HostKeyUnknown': return 'HOST_KEY_UNKNOWN';
-    case 'HostKeyChanged': return 'HOST_KEY_CHANGED';
-    case 'UnsupportedHostCertificate': return 'UNSUPPORTED_HOST_CERTIFICATE';
-    default: return undefined;
+    case undefined:
+      return undefined;
+    case 'HostKeyUnknown':
+      return 'HOST_KEY_UNKNOWN';
+    case 'HostKeyChanged':
+      return 'HOST_KEY_CHANGED';
+    case 'UnsupportedHostCertificate':
+      return 'UNSUPPORTED_HOST_CERTIFICATE';
+    default:
+      return undefined;
   }
 }
 
@@ -978,7 +1185,8 @@ function hostRuntimeMessage(
   if (expected !== undefined && received !== undefined) {
     return `Herdr protocol mismatch: Whip supports ${expected}, server reports ${received}`;
   }
-  if (lastReadinessError) return `Herdr did not become ready: ${lastReadinessError}`;
+  if (lastReadinessError)
+    return `Herdr did not become ready: ${lastReadinessError}`;
   if (sshFailureMessage) return sshFailureMessage;
   if (Array.isArray(inner) && typeof inner[0] === 'string') return inner[0];
   return error instanceof Error ? error.message : String(error);
@@ -990,30 +1198,36 @@ function hostRuntimeError(error: unknown): HostRuntimeBridgeError {
   const inner = nativeError.inner;
   const hostKeyCode = hostKeyErrorCode(tag);
   const structuredInner = isRecord(inner) ? inner : undefined;
-  const expected = tag === 'HerdrProtocolMismatch'
-    && typeof structuredInner?.expected === 'string'
-    ? structuredInner.expected
-    : undefined;
-  const received = tag === 'HerdrProtocolMismatch'
-    && typeof structuredInner?.received === 'number'
-    ? structuredInner.received
-    : undefined;
-  const lastReadinessError = tag === 'HerdrReadinessTimeout'
-    && typeof structuredInner?.lastError === 'string'
-    ? structuredInner.lastError
-    : undefined;
-  const sshFailureMessage = tag === 'SshConnectionFailure'
-    && typeof structuredInner?.message === 'string'
-    ? structuredInner.message
-    : undefined;
-  const sshFailureCode = tag === 'SshConnectionFailure'
-    && typeof structuredInner?.code === 'number'
-    ? SSH_ERROR_CODES[structuredInner.code]
-    : undefined;
-  const details = (hostKeyCode === 'HOST_KEY_UNKNOWN' || hostKeyCode === 'HOST_KEY_CHANGED')
-    && isUnknownArray(inner)
-    ? inner[0]
-    : undefined;
+  const expected =
+    tag === 'HerdrProtocolMismatch' &&
+    typeof structuredInner?.expected === 'string'
+      ? structuredInner.expected
+      : undefined;
+  const received =
+    tag === 'HerdrProtocolMismatch' &&
+    typeof structuredInner?.received === 'number'
+      ? structuredInner.received
+      : undefined;
+  const lastReadinessError =
+    tag === 'HerdrReadinessTimeout' &&
+    typeof structuredInner?.lastError === 'string'
+      ? structuredInner.lastError
+      : undefined;
+  const sshFailureMessage =
+    tag === 'SshConnectionFailure' &&
+    typeof structuredInner?.message === 'string'
+      ? structuredInner.message
+      : undefined;
+  const sshFailureCode =
+    tag === 'SshConnectionFailure' && typeof structuredInner?.code === 'number'
+      ? SSH_ERROR_CODES[structuredInner.code]
+      : undefined;
+  const details =
+    (hostKeyCode === 'HOST_KEY_UNKNOWN' ||
+      hostKeyCode === 'HOST_KEY_CHANGED') &&
+    isUnknownArray(inner)
+      ? inner[0]
+      : undefined;
   const message = hostRuntimeMessage(
     error,
     inner,
@@ -1051,14 +1265,19 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function runtimeAgentKind(kind: RuntimeAgentKind): HerdrAgentKind {
   switch (kind) {
-    case 'claude': return HerdrAgentKind.Claude;
-    case 'codex': return HerdrAgentKind.Codex;
-    case 'opencode': return HerdrAgentKind.OpenCode;
+    case 'claude':
+      return HerdrAgentKind.Claude;
+    case 'codex':
+      return HerdrAgentKind.Codex;
+    case 'opencode':
+      return HerdrAgentKind.OpenCode;
   }
 }
 
@@ -1070,23 +1289,37 @@ function nativeRequiredNumber(value: number | bigint): number {
   return typeof value === 'number' ? value : Number(value);
 }
 
-function nativeAgentStatus(value: AgentTranscriptStatus): NativeAgentTranscriptState['status'] {
+function nativeAgentStatus(
+  value: AgentTranscriptStatus,
+): NativeAgentTranscriptState['status'] {
   switch (value) {
-    case AgentTranscriptStatus.Loading: return 'loading';
-    case AgentTranscriptStatus.Live: return 'live';
-    case AgentTranscriptStatus.Stale: return 'stale';
-    case AgentTranscriptStatus.Unavailable: return 'unavailable';
-    case AgentTranscriptStatus.Error: return 'error';
-    case AgentTranscriptStatus.Closed: return 'closed';
+    case AgentTranscriptStatus.Loading:
+      return 'loading';
+    case AgentTranscriptStatus.Live:
+      return 'live';
+    case AgentTranscriptStatus.Stale:
+      return 'stale';
+    case AgentTranscriptStatus.Unavailable:
+      return 'unavailable';
+    case AgentTranscriptStatus.Error:
+      return 'error';
+    case AgentTranscriptStatus.Closed:
+      return 'closed';
   }
 }
 
-function nativeToolStatus(value: AgentToolStatus): 'pending' | 'running' | 'completed' | 'error' {
+function nativeToolStatus(
+  value: AgentToolStatus,
+): 'pending' | 'running' | 'completed' | 'error' {
   switch (value) {
-    case AgentToolStatus.Pending: return 'pending';
-    case AgentToolStatus.Running: return 'running';
-    case AgentToolStatus.Completed: return 'completed';
-    case AgentToolStatus.Error: return 'error';
+    case AgentToolStatus.Pending:
+      return 'pending';
+    case AgentToolStatus.Running:
+      return 'running';
+    case AgentToolStatus.Completed:
+      return 'completed';
+    case AgentToolStatus.Error:
+      return 'error';
   }
 }
 
@@ -1094,46 +1327,103 @@ function nativeDiagnosticSeverity(
   value: AgentDiagnosticSeverity,
 ): NativeAgentToolDiagnostic['severity'] {
   switch (value) {
-    case AgentDiagnosticSeverity.Error: return 'error';
-    case AgentDiagnosticSeverity.Warning: return 'warning';
-    case AgentDiagnosticSeverity.Info: return 'info';
-    case AgentDiagnosticSeverity.Hint: return 'hint';
+    case AgentDiagnosticSeverity.Error:
+      return 'error';
+    case AgentDiagnosticSeverity.Warning:
+      return 'warning';
+    case AgentDiagnosticSeverity.Info:
+      return 'info';
+    case AgentDiagnosticSeverity.Hint:
+      return 'hint';
   }
 }
 
-function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts'][number]): NativeAgentTranscriptPart {
+function nativeAgentPart(
+  part: AgentTranscriptState['messages'][number]['parts'][number],
+): NativeAgentTranscriptPart {
   switch (part.tag) {
     case AgentTranscriptPart_Tags.Text: {
-      const inner = part.inner as { id: string; text: string; timestampMs?: bigint };
-      return { type: 'text', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs) };
+      const inner = part.inner as {
+        id: string;
+        text: string;
+        timestampMs?: bigint;
+      };
+      return {
+        type: 'text',
+        id: inner.id,
+        text: inner.text,
+        timestamp: nativeNumber(inner.timestampMs),
+      };
     }
     case AgentTranscriptPart_Tags.Reasoning: {
-      const inner = part.inner as { id: string; text: string; timestampMs?: bigint };
-      return { type: 'reasoning', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs) };
+      const inner = part.inner as {
+        id: string;
+        text: string;
+        timestampMs?: bigint;
+      };
+      return {
+        type: 'reasoning',
+        id: inner.id,
+        text: inner.text,
+        timestamp: nativeNumber(inner.timestampMs),
+      };
     }
     case AgentTranscriptPart_Tags.Plan: {
-      const inner = part.inner as { id: string; text: string; timestampMs?: bigint };
-      return { type: 'plan', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs) };
+      const inner = part.inner as {
+        id: string;
+        text: string;
+        timestampMs?: bigint;
+      };
+      return {
+        type: 'plan',
+        id: inner.id,
+        text: inner.text,
+        timestamp: nativeNumber(inner.timestampMs),
+      };
     }
     case AgentTranscriptPart_Tags.Notice: {
-      const inner = part.inner as { id: string; level: AgentNoticeLevel; text: string; timestampMs?: bigint };
+      const inner = part.inner as {
+        id: string;
+        level: AgentNoticeLevel;
+        text: string;
+        timestampMs?: bigint;
+      };
       return {
-        type: 'notice', id: inner.id, text: inner.text, timestamp: nativeNumber(inner.timestampMs),
-        level: inner.level === AgentNoticeLevel.Warning ? 'warning' : inner.level === AgentNoticeLevel.Error ? 'error' : 'info',
+        type: 'notice',
+        id: inner.id,
+        text: inner.text,
+        timestamp: nativeNumber(inner.timestampMs),
+        level:
+          inner.level === AgentNoticeLevel.Warning
+            ? 'warning'
+            : inner.level === AgentNoticeLevel.Error
+            ? 'error'
+            : 'info',
       };
     }
     case AgentTranscriptPart_Tags.Tool: {
       const inner = part.inner;
       const input: Record<string, string | number | boolean> = {};
-      for (const field of inner.state.input) input[field.key] = field.value.inner.value;
+      for (const field of inner.state.input)
+        input[field.key] = field.value.inner.value;
       return {
-        type: 'tool', id: inner.id, callId: inner.callId, tool: inner.tool,
+        type: 'tool',
+        id: inner.id,
+        callId: inner.callId,
+        tool: inner.tool,
         timestamp: nativeNumber(inner.timestampMs),
         state: {
-          status: nativeToolStatus(inner.state.status), input,
-          output: inner.state.output, error: inner.state.error, title: inner.state.title,
-          startedAt: nativeNumber(inner.state.startedAtMs), completedAt: nativeNumber(inner.state.completedAtMs),
-          exitCode: inner.state.exitCode === undefined ? undefined : Number(inner.state.exitCode),
+          status: nativeToolStatus(inner.state.status),
+          input,
+          output: inner.state.output,
+          error: inner.state.error,
+          title: inner.state.title,
+          startedAt: nativeNumber(inner.state.startedAtMs),
+          completedAt: nativeNumber(inner.state.completedAtMs),
+          exitCode:
+            inner.state.exitCode === undefined
+              ? undefined
+              : Number(inner.state.exitCode),
           files: inner.state.files.map(file => ({ ...file })),
           diagnostics: inner.state.diagnostics.map(diagnostic => ({
             file: diagnostic.file,
@@ -1149,19 +1439,27 @@ function nativeAgentPart(part: AgentTranscriptState['messages'][number]['parts']
   }
 }
 
-function nativeAgentInfo(value: NonNullable<AgentTranscriptState['info']>): NativeAgentTranscriptInfo {
+function nativeAgentInfo(
+  value: NonNullable<AgentTranscriptState['info']>,
+): NativeAgentTranscriptInfo {
   return {
-    id: value.id, title: value.title, directory: value.directory,
-    createdAt: nativeNumber(value.createdAtMs), updatedAt: nativeNumber(value.updatedAtMs),
+    id: value.id,
+    title: value.title,
+    directory: value.directory,
+    createdAt: nativeNumber(value.createdAtMs),
+    updatedAt: nativeNumber(value.updatedAtMs),
   };
 }
 
-function nativeAgentMessage(message: AgentTranscriptMessage): NativeAgentTranscriptMessage {
+function nativeAgentMessage(
+  message: AgentTranscriptMessage,
+): NativeAgentTranscriptMessage {
   return {
     id: message.id,
     role: message.role === AgentMessageRole.Assistant ? 'assistant' : 'user',
     parentId: message.parentId,
-    createdAt: nativeNumber(message.createdAtMs), completedAt: nativeNumber(message.completedAtMs),
+    createdAt: nativeNumber(message.createdAtMs),
+    completedAt: nativeNumber(message.completedAtMs),
     error: message.error,
     parts: message.parts.map(nativeAgentPart),
     diffs: message.diffs.map(file => ({ ...file })),
@@ -1170,16 +1468,26 @@ function nativeAgentMessage(message: AgentTranscriptMessage): NativeAgentTranscr
 
 function nativeAgentTurn(turn: AgentTranscriptTurn): NativeAgentTranscriptTurn {
   return {
-    id: turn.id, userMessageId: turn.userMessageId, assistantMessageIds: [...turn.assistantMessageIds],
-    status: turn.status === AgentTurnStatus.Working ? 'working'
-      : turn.status === AgentTurnStatus.Interrupted ? 'interrupted'
-        : turn.status === AgentTurnStatus.Error ? 'error' : 'idle',
-    startedAt: nativeNumber(turn.startedAtMs), completedAt: nativeNumber(turn.completedAtMs),
+    id: turn.id,
+    userMessageId: turn.userMessageId,
+    assistantMessageIds: [...turn.assistantMessageIds],
+    status:
+      turn.status === AgentTurnStatus.Working
+        ? 'working'
+        : turn.status === AgentTurnStatus.Interrupted
+        ? 'interrupted'
+        : turn.status === AgentTurnStatus.Error
+        ? 'error'
+        : 'idle',
+    startedAt: nativeNumber(turn.startedAtMs),
+    completedAt: nativeNumber(turn.completedAtMs),
     diffs: turn.diffs.map(file => ({ ...file })),
   };
 }
 
-function nativeAgentTranscript(value: AgentTranscriptState): NativeAgentTranscriptState {
+function nativeAgentTranscript(
+  value: AgentTranscriptState,
+): NativeAgentTranscriptState {
   return {
     sessionId: value.sessionId,
     agent: value.agent === AgentTranscriptKind.OpenCode ? 'opencode' : 'codex',
@@ -1192,39 +1500,94 @@ function nativeAgentTranscript(value: AgentTranscriptState): NativeAgentTranscri
   };
 }
 
-function nativeAgentDelta(delta: AgentTranscriptDelta): NativeAgentTranscriptDelta {
+function nativeAgentChatBinding(
+  value: AgentChatBinding,
+): NativeAgentChatBinding {
+  return {
+    runtimeIncarnation: Number(value.runtimeIncarnation),
+    bindingToken: value.bindingToken,
+    bindingGeneration: Number(value.bindingGeneration),
+    terminalId: value.terminalId,
+    paneId: value.paneId,
+    agent: value.agent === AgentTranscriptKind.OpenCode ? 'opencode' : 'codex',
+    sessionId: value.sessionId,
+    transcriptKey: value.transcriptKey,
+    state: nativeAgentTranscript(value.state),
+  };
+}
+
+function nativeAgentChatUnavailableReason(
+  value: AgentChatUnavailableReason,
+): Extract<NativeAgentChatOpenResult, { type: 'no-chat' }>['reason'] {
+  switch (value) {
+    case AgentChatUnavailableReason.HostStateUnavailable:
+      return 'host-state-unavailable';
+    case AgentChatUnavailableReason.TerminalNotFound:
+      return 'terminal-not-found';
+    case AgentChatUnavailableReason.UnsupportedPane:
+      return 'unsupported-pane';
+  }
+  throw new Error(`Unknown native agent Chat unavailable reason: ${value}`);
+}
+
+function nativeAgentDelta(
+  delta: AgentTranscriptDelta,
+): NativeAgentTranscriptDelta {
   switch (delta.tag) {
     case AgentTranscriptDelta_Tags.Reset:
       return { type: 'reset', state: nativeAgentTranscript(delta.inner.state) };
     case AgentTranscriptDelta_Tags.InfoChanged:
-      return { type: 'info-changed', info: delta.inner.info ? nativeAgentInfo(delta.inner.info) : undefined };
+      return {
+        type: 'info-changed',
+        info: delta.inner.info ? nativeAgentInfo(delta.inner.info) : undefined,
+      };
     case AgentTranscriptDelta_Tags.MessageUpserted:
-      return { type: 'message-upserted', index: delta.inner.index, message: nativeAgentMessage(delta.inner.message) };
+      return {
+        type: 'message-upserted',
+        index: delta.inner.index,
+        message: nativeAgentMessage(delta.inner.message),
+      };
     case AgentTranscriptDelta_Tags.MessageRemoved:
-      return { type: 'message-removed', index: delta.inner.index, messageId: delta.inner.messageId };
+      return {
+        type: 'message-removed',
+        index: delta.inner.index,
+        messageId: delta.inner.messageId,
+      };
     case AgentTranscriptDelta_Tags.MessagesTruncated:
       return { type: 'messages-truncated', length: delta.inner.length };
     case AgentTranscriptDelta_Tags.TurnUpserted:
-      return { type: 'turn-upserted', index: delta.inner.index, turn: nativeAgentTurn(delta.inner.turn) };
+      return {
+        type: 'turn-upserted',
+        index: delta.inner.index,
+        turn: nativeAgentTurn(delta.inner.turn),
+      };
     case AgentTranscriptDelta_Tags.TurnsTruncated:
       return { type: 'turns-truncated', length: delta.inner.length };
     case AgentTranscriptDelta_Tags.StatusChanged:
-      return { type: 'status-changed', status: nativeAgentStatus(delta.inner.status), error: delta.inner.error };
+      return {
+        type: 'status-changed',
+        status: nativeAgentStatus(delta.inner.status),
+        error: delta.inner.error,
+      };
   }
 }
 
-function nativeAgentUpdate(event: AgentTranscriptEvent): NativeAgentTranscriptUpdate {
+function nativeAgentUpdate(
+  event: AgentTranscriptEvent,
+): NativeAgentTranscriptUpdate {
   return {
     runtimeIncarnation: Number(event.runtimeIncarnation),
     key: event.key,
     revision: Number(event.update.revision),
     deltas: event.update.deltas.map(nativeAgentDelta),
-    cacheWrite: event.cacheWrite ? {
-      namespace: event.cacheWrite.namespace,
-      key: event.cacheWrite.key,
-      blob: event.cacheWrite.blob,
-      confirmationToken: event.cacheWrite.confirmationToken,
-    } : undefined,
+    cacheWrite: event.cacheWrite
+      ? {
+          namespace: event.cacheWrite.namespace,
+          key: event.cacheWrite.key,
+          blob: event.cacheWrite.blob,
+          confirmationToken: event.cacheWrite.confirmationToken,
+        }
+      : undefined,
   };
 }
 
@@ -1238,13 +1601,20 @@ function splitDirectionString(value: HerdrSplitDirection): 'right' | 'down' {
   return value === HerdrSplitDirection.Down ? 'down' : 'right';
 }
 
-function agentStatus(value: HerdrAgentStatus): 'idle' | 'working' | 'blocked' | 'done' | 'unknown' {
+function agentStatus(
+  value: HerdrAgentStatus,
+): 'idle' | 'working' | 'blocked' | 'done' | 'unknown' {
   switch (value) {
-    case HerdrAgentStatus.Idle: return 'idle';
-    case HerdrAgentStatus.Working: return 'working';
-    case HerdrAgentStatus.Blocked: return 'blocked';
-    case HerdrAgentStatus.Done: return 'done';
-    case HerdrAgentStatus.Unknown: return 'unknown';
+    case HerdrAgentStatus.Idle:
+      return 'idle';
+    case HerdrAgentStatus.Working:
+      return 'working';
+    case HerdrAgentStatus.Blocked:
+      return 'blocked';
+    case HerdrAgentStatus.Done:
+      return 'done';
+    case HerdrAgentStatus.Unknown:
+      return 'unknown';
   }
 }
 
@@ -1252,11 +1622,16 @@ function agentSessionKind(value: HerdrAgentSessionKind): 'id' | 'path' {
   return value === HerdrAgentSessionKind.Path ? 'path' : 'id';
 }
 
-function terminalNotificationKind(value: HerdrTerminalNotificationKind): 0 | 1 | 2 {
+function terminalNotificationKind(
+  value: HerdrTerminalNotificationKind,
+): 0 | 1 | 2 {
   switch (value) {
-    case HerdrTerminalNotificationKind.Sound: return 0;
-    case HerdrTerminalNotificationKind.Toast: return 1;
-    case HerdrTerminalNotificationKind.SystemToast: return 2;
+    case HerdrTerminalNotificationKind.Sound:
+      return 0;
+    case HerdrTerminalNotificationKind.Toast:
+      return 1;
+    case HerdrTerminalNotificationKind.SystemToast:
+      return 2;
   }
 }
 
@@ -1264,63 +1639,141 @@ function controlRequest(request: RuntimeHerdrRequest): HerdrControlRequest {
   const params: Record<string, unknown> = { ...request.params };
   const text = (key: string): string => {
     const value = params[key];
-    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    return typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
       ? String(value)
       : '';
   };
   switch (request.method) {
-    case 'ping': return HerdrControlRequest.Ping.new();
-    case 'session.snapshot': return HerdrControlRequest.SessionSnapshot.new();
-    case 'workspace.create': return HerdrControlRequest.WorkspaceCreate.new({
-      label: optionalString(params.label),
-      cwd: optionalString(params.cwd),
-    });
-    case 'workspace.focus': return HerdrControlRequest.WorkspaceFocus.new({ workspaceId: text('workspace_id') });
-    case 'workspace.rename': return HerdrControlRequest.WorkspaceRename.new({ workspaceId: text('workspace_id'), label: text('label') });
-    case 'workspace.close': return HerdrControlRequest.WorkspaceClose.new({ workspaceId: text('workspace_id') });
-    case 'tab.create': return HerdrControlRequest.TabCreate.new({ workspaceId: text('workspace_id'), label: optionalString(params.label) });
-    case 'tab.focus': return HerdrControlRequest.TabFocus.new({ tabId: text('tab_id') });
-    case 'tab.rename': return HerdrControlRequest.TabRename.new({ tabId: text('tab_id'), label: text('label') });
-    case 'tab.close': return HerdrControlRequest.TabClose.new({ tabId: text('tab_id') });
-    case 'pane.read': return HerdrControlRequest.PaneRead.new({ paneId: text('pane_id'), lines: Number(params.lines) });
-    case 'pane.focus': return HerdrControlRequest.PaneFocus.new({ paneId: text('pane_id') });
-    case 'pane.rename': return HerdrControlRequest.PaneRename.new({ paneId: text('pane_id'), label: optionalString(params.label) });
-    case 'pane.split': return HerdrControlRequest.PaneSplit.new({ paneId: text('target_pane_id'), direction: splitDirection(params.direction) });
-    case 'pane.zoom': return HerdrControlRequest.PaneZoom.new({ paneId: text('pane_id') });
-    case 'pane.close': return HerdrControlRequest.PaneClose.new({ paneId: text('pane_id') });
-    case 'pane.send_input': return HerdrControlRequest.PaneSendInput.new({ paneId: text('pane_id'), text: text('text'), keys: stringArray(params.keys) });
-    case 'pane.send_text': return HerdrControlRequest.PaneSendText.new({ paneId: text('pane_id'), text: text('text') });
-    case 'pane.send_keys': return HerdrControlRequest.PaneSendKeys.new({ paneId: text('pane_id'), keys: stringArray(params.keys) });
-    case 'agent.focus': return HerdrControlRequest.AgentFocus.new({ target: text('target') });
-    case 'agent.prompt': return HerdrControlRequest.AgentPrompt.new({ target: text('target'), text: text('text') });
-    default: throw new Error('Unsupported Herdr API method');
+    case 'ping':
+      return HerdrControlRequest.Ping.new();
+    case 'session.snapshot':
+      return HerdrControlRequest.SessionSnapshot.new();
+    case 'workspace.create':
+      return HerdrControlRequest.WorkspaceCreate.new({
+        label: optionalString(params.label),
+        cwd: optionalString(params.cwd),
+      });
+    case 'workspace.focus':
+      return HerdrControlRequest.WorkspaceFocus.new({
+        workspaceId: text('workspace_id'),
+      });
+    case 'workspace.rename':
+      return HerdrControlRequest.WorkspaceRename.new({
+        workspaceId: text('workspace_id'),
+        label: text('label'),
+      });
+    case 'workspace.close':
+      return HerdrControlRequest.WorkspaceClose.new({
+        workspaceId: text('workspace_id'),
+      });
+    case 'tab.create':
+      return HerdrControlRequest.TabCreate.new({
+        workspaceId: text('workspace_id'),
+        label: optionalString(params.label),
+      });
+    case 'tab.focus':
+      return HerdrControlRequest.TabFocus.new({ tabId: text('tab_id') });
+    case 'tab.rename':
+      return HerdrControlRequest.TabRename.new({
+        tabId: text('tab_id'),
+        label: text('label'),
+      });
+    case 'tab.close':
+      return HerdrControlRequest.TabClose.new({ tabId: text('tab_id') });
+    case 'pane.read':
+      return HerdrControlRequest.PaneRead.new({
+        paneId: text('pane_id'),
+        lines: Number(params.lines),
+      });
+    case 'pane.focus':
+      return HerdrControlRequest.PaneFocus.new({ paneId: text('pane_id') });
+    case 'pane.rename':
+      return HerdrControlRequest.PaneRename.new({
+        paneId: text('pane_id'),
+        label: optionalString(params.label),
+      });
+    case 'pane.split':
+      return HerdrControlRequest.PaneSplit.new({
+        paneId: text('target_pane_id'),
+        direction: splitDirection(params.direction),
+      });
+    case 'pane.zoom':
+      return HerdrControlRequest.PaneZoom.new({ paneId: text('pane_id') });
+    case 'pane.close':
+      return HerdrControlRequest.PaneClose.new({ paneId: text('pane_id') });
+    case 'pane.send_input':
+      return HerdrControlRequest.PaneSendInput.new({
+        paneId: text('pane_id'),
+        text: text('text'),
+        keys: stringArray(params.keys),
+      });
+    case 'pane.send_text':
+      return HerdrControlRequest.PaneSendText.new({
+        paneId: text('pane_id'),
+        text: text('text'),
+      });
+    case 'pane.send_keys':
+      return HerdrControlRequest.PaneSendKeys.new({
+        paneId: text('pane_id'),
+        keys: stringArray(params.keys),
+      });
+    case 'agent.focus':
+      return HerdrControlRequest.AgentFocus.new({ target: text('target') });
+    case 'agent.prompt':
+      return HerdrControlRequest.AgentPrompt.new({
+        target: text('target'),
+        text: text('text'),
+      });
+    default:
+      throw new Error('Unsupported Herdr API method');
   }
 }
 
-function stringRecord(value: Map<string, string> | undefined): Record<string, string> | undefined {
+function stringRecord(
+  value: Map<string, string> | undefined,
+): Record<string, string> | undefined {
   return value ? Object.fromEntries(value) : undefined;
 }
 
-function agentSession(value: HerdrAgentSessionInfo | undefined): WhipAgentSessionInfo | undefined {
-  return value && { source: value.source, agent: value.agent, kind: agentSessionKind(value.kind), value: value.value };
+function agentSession(
+  value: HerdrAgentSessionInfo | undefined,
+): WhipAgentSessionInfo | undefined {
+  return (
+    value && {
+      source: value.source,
+      agent: value.agent,
+      kind: agentSessionKind(value.kind),
+      value: value.value,
+    }
+  );
 }
 
-function paneScroll(value: HerdrPaneScrollInfo | undefined): WhipPaneScrollInfo | undefined {
-  return value && {
-    offset_from_bottom: value.offsetFromBottom,
-    max_offset_from_bottom: value.maxOffsetFromBottom,
-    viewport_rows: value.viewportRows,
-  };
+function paneScroll(
+  value: HerdrPaneScrollInfo | undefined,
+): WhipPaneScrollInfo | undefined {
+  return (
+    value && {
+      offset_from_bottom: value.offsetFromBottom,
+      max_offset_from_bottom: value.maxOffsetFromBottom,
+      viewport_rows: value.viewportRows,
+    }
+  );
 }
 
-function workspaceWorktree(value: HerdrWorkspaceWorktreeInfo | undefined): WhipWorkspaceWorktreeInfo | undefined {
-  return value && {
-    repo_key: value.repoKey,
-    repo_name: value.repoName,
-    repo_root: value.repoRoot,
-    checkout_path: value.checkoutPath,
-    is_linked_worktree: value.isLinkedWorktree,
-  };
+function workspaceWorktree(
+  value: HerdrWorkspaceWorktreeInfo | undefined,
+): WhipWorkspaceWorktreeInfo | undefined {
+  return (
+    value && {
+      repo_key: value.repoKey,
+      repo_name: value.repoName,
+      repo_root: value.repoRoot,
+      checkout_path: value.checkoutPath,
+      is_linked_worktree: value.isLinkedWorktree,
+    }
+  );
 }
 
 function workspace(value: HerdrWorkspaceInfo): WhipWorkspaceInfo {
@@ -1412,8 +1865,17 @@ function layout(value: HerdrPaneLayoutSnapshot): WhipPaneLayoutSnapshot {
     zoomed: value.zoomed,
     area: rect(value.area),
     focused_pane_id: value.focusedPaneId,
-    panes: value.panes.map(item => ({ pane_id: item.paneId, focused: item.focused, rect: rect(item.rect) })),
-    splits: value.splits.map(item => ({ id: item.id, direction: splitDirectionString(item.direction), ratio: item.ratio, rect: rect(item.rect) })),
+    panes: value.panes.map(item => ({
+      pane_id: item.paneId,
+      focused: item.focused,
+      rect: rect(item.rect),
+    })),
+    splits: value.splits.map(item => ({
+      id: item.id,
+      direction: splitDirectionString(item.direction),
+      ratio: item.ratio,
+      rect: rect(item.rect),
+    })),
   };
 }
 
@@ -1434,63 +1896,87 @@ function snapshot(value: HerdrSessionSnapshot): WhipHostSnapshot {
 
 function hostSyncStatus(value: HostSyncStatus): RuntimeHostState['syncStatus'] {
   switch (value) {
-    case HostSyncStatus.Idle: return 'idle';
-    case HostSyncStatus.Syncing: return 'syncing';
-    case HostSyncStatus.Synced: return 'synced';
-    case HostSyncStatus.Error: return 'error';
+    case HostSyncStatus.Idle:
+      return 'idle';
+    case HostSyncStatus.Syncing:
+      return 'syncing';
+    case HostSyncStatus.Synced:
+      return 'synced';
+    case HostSyncStatus.Error:
+      return 'error';
   }
 }
 
 function runtimeTransferState(value: TransferState): RuntimeTransferState {
   switch (value) {
-    case TransferState.Pending: return 'pending';
-    case TransferState.Running: return 'running';
-    case TransferState.Completed: return 'completed';
-    case TransferState.Failed: return 'failed';
-    case TransferState.Cancelled: return 'cancelled';
+    case TransferState.Pending:
+      return 'pending';
+    case TransferState.Running:
+      return 'running';
+    case TransferState.Completed:
+      return 'completed';
+    case TransferState.Failed:
+      return 'failed';
+    case TransferState.Cancelled:
+      return 'cancelled';
   }
 }
 
 function runtimePreviewState(value: PreviewState): RuntimePreviewState {
   switch (value) {
-    case PreviewState.Running: return 'running';
-    case PreviewState.Disconnected: return 'disconnected';
-    case PreviewState.Stopped: return 'stopped';
+    case PreviewState.Running:
+      return 'running';
+    case PreviewState.Disconnected:
+      return 'disconnected';
+    case PreviewState.Stopped:
+      return 'stopped';
   }
 }
 
-function runtimeTransferProgress(value: NativeTransferProgress): RuntimeTransferProgress {
+function runtimeTransferProgress(
+  value: NativeTransferProgress,
+): RuntimeTransferProgress {
   return {
     transferId: value.transferId,
     bytesTransferred: Number(value.bytesTransferred),
-    totalBytes: value.totalBytes === undefined ? undefined : Number(value.totalBytes),
+    totalBytes:
+      value.totalBytes === undefined ? undefined : Number(value.totalBytes),
     state: runtimeTransferState(value.state),
   };
 }
 
 function runtimeRemoteFileKind(value: RemoteFileKind): RuntimeRemoteFileKind {
   switch (value) {
-    case RemoteFileKind.File: return 'file';
-    case RemoteFileKind.Directory: return 'directory';
-    case RemoteFileKind.Symlink: return 'symlink';
-    case RemoteFileKind.Other: return 'other';
+    case RemoteFileKind.File:
+      return 'file';
+    case RemoteFileKind.Directory:
+      return 'directory';
+    case RemoteFileKind.Symlink:
+      return 'symlink';
+    case RemoteFileKind.Other:
+      return 'other';
   }
 }
 
-function runtimeDirectory(value: NativeRemoteDirectoryListing): RuntimeRemoteDirectoryListing {
+function runtimeDirectory(
+  value: NativeRemoteDirectoryListing,
+): RuntimeRemoteDirectoryListing {
   return {
     path: value.path,
     entries: value.entries.map(runtimeRemoteEntry),
   };
 }
 
-function runtimeRemoteEntry(entry: NativeRemoteDirectoryListing['entries'][number]): RuntimeRemoteFileEntry {
+function runtimeRemoteEntry(
+  entry: NativeRemoteDirectoryListing['entries'][number],
+): RuntimeRemoteFileEntry {
   return {
     name: entry.name,
     path: entry.path,
     kind: runtimeRemoteFileKind(entry.kind),
     size: entry.size === undefined ? undefined : Number(entry.size),
-    modifiedAt: entry.modifiedAt === undefined ? undefined : Number(entry.modifiedAt),
+    modifiedAt:
+      entry.modifiedAt === undefined ? undefined : Number(entry.modifiedAt),
     permissions: entry.permissions,
   };
 }
@@ -1516,16 +2002,26 @@ function nativeGitStatus(value: RuntimeGitStatusEntry): NativeGitStatusEntry {
 }
 
 function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
-  const kind = value.kind === GitDiffKind.Binary ? 'binary'
-    : value.kind === GitDiffKind.Empty ? 'empty' : 'text';
+  const kind =
+    value.kind === GitDiffKind.Binary
+      ? 'binary'
+      : value.kind === GitDiffKind.Empty
+      ? 'empty'
+      : 'text';
   const rowKind = (rowKindValue: GitDiffRowKind): RuntimeGitDiffRowKind => {
     switch (rowKindValue) {
-      case GitDiffRowKind.Header: return 'header';
-      case GitDiffRowKind.Hunk: return 'hunk';
-      case GitDiffRowKind.Context: return 'context';
-      case GitDiffRowKind.Addition: return 'addition';
-      case GitDiffRowKind.Deletion: return 'deletion';
-      case GitDiffRowKind.Meta: return 'meta';
+      case GitDiffRowKind.Header:
+        return 'header';
+      case GitDiffRowKind.Hunk:
+        return 'hunk';
+      case GitDiffRowKind.Context:
+        return 'context';
+      case GitDiffRowKind.Addition:
+        return 'addition';
+      case GitDiffRowKind.Deletion:
+        return 'deletion';
+      case GitDiffRowKind.Meta:
+        return 'meta';
     }
   };
   return {
@@ -1545,8 +2041,12 @@ function runtimeGitDiff(value: NativeGitDiff): RuntimeGitDiff {
 function runtimePreview(value: NativePreviewInfo): RuntimePreviewInfo {
   return {
     id: value.previewId,
-    kind: value.kind === PreviewKind.Html ? 'html'
-      : value.kind === PreviewKind.RemoteFile ? 'remote-file' : 'web-forward',
+    kind:
+      value.kind === PreviewKind.Html
+        ? 'html'
+        : value.kind === PreviewKind.RemoteFile
+        ? 'remote-file'
+        : 'web-forward',
     state: runtimePreviewState(value.state),
     url: value.localUrl,
     displayUrl: value.displayUrl,
@@ -1557,17 +2057,28 @@ function runtimeDiagnosticOperation(
   value: NativeRuntimeDiagnosticOperation,
 ): RuntimeDiagnosticOperation {
   switch (value) {
-    case NativeRuntimeDiagnosticOperation.SshConnect: return 'ssh-connect';
-    case NativeRuntimeDiagnosticOperation.SshReconnect: return 'ssh-reconnect';
-    case NativeRuntimeDiagnosticOperation.SshReconnectFast: return 'ssh-reconnect-fast';
-    case NativeRuntimeDiagnosticOperation.SshReconnectPersistent: return 'ssh-reconnect-persistent';
-    case NativeRuntimeDiagnosticOperation.HostLatencyProbe: return 'host-latency-probe';
-    case NativeRuntimeDiagnosticOperation.HerdrRequest: return 'herdr-request';
-    case NativeRuntimeDiagnosticOperation.HerdrRecovery: return 'herdr-recovery';
-    case NativeRuntimeDiagnosticOperation.TerminalAttach: return 'terminal-attach';
-    case NativeRuntimeDiagnosticOperation.TerminalRecovery: return 'terminal-recovery';
-    case NativeRuntimeDiagnosticOperation.SshShellRecovery: return 'ssh-shell-recovery';
-    case NativeRuntimeDiagnosticOperation.EventStreamRecovery: return 'event-stream-recovery';
+    case NativeRuntimeDiagnosticOperation.SshConnect:
+      return 'ssh-connect';
+    case NativeRuntimeDiagnosticOperation.SshReconnect:
+      return 'ssh-reconnect';
+    case NativeRuntimeDiagnosticOperation.SshReconnectFast:
+      return 'ssh-reconnect-fast';
+    case NativeRuntimeDiagnosticOperation.SshReconnectPersistent:
+      return 'ssh-reconnect-persistent';
+    case NativeRuntimeDiagnosticOperation.HostLatencyProbe:
+      return 'host-latency-probe';
+    case NativeRuntimeDiagnosticOperation.HerdrRequest:
+      return 'herdr-request';
+    case NativeRuntimeDiagnosticOperation.HerdrRecovery:
+      return 'herdr-recovery';
+    case NativeRuntimeDiagnosticOperation.TerminalAttach:
+      return 'terminal-attach';
+    case NativeRuntimeDiagnosticOperation.TerminalRecovery:
+      return 'terminal-recovery';
+    case NativeRuntimeDiagnosticOperation.SshShellRecovery:
+      return 'ssh-shell-recovery';
+    case NativeRuntimeDiagnosticOperation.EventStreamRecovery:
+      return 'event-stream-recovery';
   }
 }
 
@@ -1576,9 +2087,10 @@ function runtimeDiagnostic(value: NativeRuntimeDiagnostic): RuntimeDiagnostic {
     operation: runtimeDiagnosticOperation(value.operation),
     durationMs: value.durationMs,
     transportDurationMs: value.transportDurationMs,
-    outcome: value.outcome === NativeRuntimeDiagnosticOutcome.Started
-      ? 'started'
-      : value.outcome === NativeRuntimeDiagnosticOutcome.Succeeded
+    outcome:
+      value.outcome === NativeRuntimeDiagnosticOutcome.Started
+        ? 'started'
+        : value.outcome === NativeRuntimeDiagnosticOutcome.Succeeded
         ? 'succeeded'
         : 'failed',
     terminalId: value.terminalId,
@@ -1598,10 +2110,14 @@ function runtimeHostLatency(
 
 function hostFreshness(value: HostFreshness): RuntimeHostState['freshness'] {
   switch (value) {
-    case HostFreshness.Loading: return 'loading';
-    case HostFreshness.Fresh: return 'fresh';
-    case HostFreshness.Stale: return 'stale';
-    case HostFreshness.Unavailable: return 'unavailable';
+    case HostFreshness.Loading:
+      return 'loading';
+    case HostFreshness.Fresh:
+      return 'fresh';
+    case HostFreshness.Stale:
+      return 'stale';
+    case HostFreshness.Unavailable:
+      return 'unavailable';
   }
 }
 
@@ -1613,8 +2129,14 @@ function runtimeHostState(value: HostStateSnapshot): RuntimeHostState {
     syncStatus: hostSyncStatus(value.syncStatus),
     freshness: hostFreshness(value.freshness),
     error: value.error,
-    lastSyncedAtMs: value.lastSyncedAtMs === undefined ? undefined : Number(value.lastSyncedAtMs),
-    lastEventAtMs: value.lastEventAtMs === undefined ? undefined : Number(value.lastEventAtMs),
+    lastSyncedAtMs:
+      value.lastSyncedAtMs === undefined
+        ? undefined
+        : Number(value.lastSyncedAtMs),
+    lastEventAtMs:
+      value.lastEventAtMs === undefined
+        ? undefined
+        : Number(value.lastEventAtMs),
     needsResync: value.needsResync,
     focus: {
       workspaceId: value.focus.workspaceId,
@@ -1629,12 +2151,18 @@ function appConnectionStatus(
   value: AppConnectionStatus,
 ): AppSessionProjection['connectionStatus'] {
   switch (value) {
-    case AppConnectionStatus.Connecting: return 'connecting';
-    case AppConnectionStatus.Connected: return 'connected';
-    case AppConnectionStatus.Ready: return 'ready';
-    case AppConnectionStatus.Reconnecting: return 'reconnecting';
-    case AppConnectionStatus.Disconnected: return 'disconnected';
-    case AppConnectionStatus.Error: return 'error';
+    case AppConnectionStatus.Connecting:
+      return 'connecting';
+    case AppConnectionStatus.Connected:
+      return 'connected';
+    case AppConnectionStatus.Ready:
+      return 'ready';
+    case AppConnectionStatus.Reconnecting:
+      return 'reconnecting';
+    case AppConnectionStatus.Disconnected:
+      return 'disconnected';
+    case AppConnectionStatus.Error:
+      return 'error';
   }
 }
 
@@ -1642,12 +2170,18 @@ function nativeAppConnectionStatus(
   value: AppSessionProjection['connectionStatus'],
 ): AppConnectionStatus {
   switch (value) {
-    case 'connecting': return AppConnectionStatus.Connecting;
-    case 'connected': return AppConnectionStatus.Connected;
-    case 'ready': return AppConnectionStatus.Ready;
-    case 'reconnecting': return AppConnectionStatus.Reconnecting;
-    case 'disconnected': return AppConnectionStatus.Disconnected;
-    case 'error': return AppConnectionStatus.Error;
+    case 'connecting':
+      return AppConnectionStatus.Connecting;
+    case 'connected':
+      return AppConnectionStatus.Connected;
+    case 'ready':
+      return AppConnectionStatus.Ready;
+    case 'reconnecting':
+      return AppConnectionStatus.Reconnecting;
+    case 'disconnected':
+      return AppConnectionStatus.Disconnected;
+    case 'error':
+      return AppConnectionStatus.Error;
   }
 }
 
@@ -1674,13 +2208,14 @@ function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
           paneId: terminal.paneId,
           title: terminal.title,
           kind: terminal.kind === TerminalKind.Ssh ? 'ssh' : 'herdr',
-          status: terminal.state === TerminalUiState.Connecting
-            ? 'connecting'
-            : terminal.state === TerminalUiState.Connected
+          status:
+            terminal.state === TerminalUiState.Connecting
+              ? 'connecting'
+              : terminal.state === TerminalUiState.Connected
               ? 'connected'
               : terminal.state === TerminalUiState.Error
-                ? 'error'
-                : 'disconnected',
+              ? 'error'
+              : 'disconnected',
           error: terminal.error,
           reconnectAttempt: terminal.reconnectAttempt,
         })),
@@ -1694,9 +2229,16 @@ function appCoreProjection(value: NativeAppCoreView): AppCoreProjection {
 function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
   switch (value.tag) {
     case HerdrControlResult_Tags.Pong:
-      return { type: 'pong', version: value.inner.version, protocol: value.inner.protocol };
+      return {
+        type: 'pong',
+        version: value.inner.version,
+        protocol: value.inner.protocol,
+      };
     case HerdrControlResult_Tags.SessionSnapshot:
-      return { type: 'session_snapshot', snapshot: snapshot(value.inner.snapshot) };
+      return {
+        type: 'session_snapshot',
+        snapshot: snapshot(value.inner.snapshot),
+      };
     case HerdrControlResult_Tags.WorkspaceCreated:
       return {
         type: 'workspace_created',
@@ -1705,9 +2247,16 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
         root_pane: pane(value.inner.rootPane),
       };
     case HerdrControlResult_Tags.WorkspaceInfo:
-      return { type: 'workspace_info', workspace: workspace(value.inner.workspace) };
+      return {
+        type: 'workspace_info',
+        workspace: workspace(value.inner.workspace),
+      };
     case HerdrControlResult_Tags.TabCreated:
-      return { type: 'tab_created', tab: tab(value.inner.tab), root_pane: pane(value.inner.rootPane) };
+      return {
+        type: 'tab_created',
+        tab: tab(value.inner.tab),
+        root_pane: pane(value.inner.rootPane),
+      };
     case HerdrControlResult_Tags.TabInfo:
       return { type: 'tab_info', tab: tab(value.inner.tab) };
     case HerdrControlResult_Tags.PaneInfo:
@@ -1715,7 +2264,11 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
     case HerdrControlResult_Tags.PaneRead:
       return { type: 'pane_read', read: { text: value.inner.read.text } };
     case HerdrControlResult_Tags.AgentStarted:
-      return { type: 'agent_started', agent: agent(value.inner.agent), argv: value.inner.argv };
+      return {
+        type: 'agent_started',
+        agent: agent(value.inner.agent),
+        argv: value.inner.argv,
+      };
     case HerdrControlResult_Tags.AgentInfo:
       return { type: 'agent_info', agent: agent(value.inner.agent) };
     case HerdrControlResult_Tags.AgentPrompted:
@@ -1723,9 +2276,10 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
     case HerdrControlResult_Tags.IntegrationInstalled:
       return {
         type: 'integration_install',
-        target: value.inner.install.kind === HerdrAgentKind.Claude
-          ? 'claude'
-          : value.inner.install.kind === HerdrAgentKind.Codex
+        target:
+          value.inner.install.kind === HerdrAgentKind.Claude
+            ? 'claude'
+            : value.inner.install.kind === HerdrAgentKind.Codex
             ? 'codex'
             : 'opencode',
         details: { messages: [...value.inner.install.messages] },
@@ -1737,7 +2291,10 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
   }
 }
 
-function controlEvent(terminalId: string, event: HerdrTerminalControlEvent): BridgeEvent {
+function controlEvent(
+  terminalId: string,
+  event: HerdrTerminalControlEvent,
+): BridgeEvent {
   switch (event.tag) {
     case HerdrTerminalControlEvent_Tags.Closed:
       return { type: 'closed', terminalId, text: event.inner.reason };
@@ -1758,9 +2315,17 @@ function controlEvent(terminalId: string, event: HerdrTerminalControlEvent): Bri
     case HerdrTerminalControlEvent_Tags.MouseCapture:
       return { type: 'mouse_capture', terminalId, flag: event.inner.enabled };
     case HerdrTerminalControlEvent_Tags.KittyKeyboardReportAll:
-      return { type: 'kitty_keyboard_report_all', terminalId, flag: event.inner.enabled };
+      return {
+        type: 'kitty_keyboard_report_all',
+        terminalId,
+        flag: event.inner.enabled,
+      };
     case HerdrTerminalControlEvent_Tags.PrefixInputSource:
-      return { type: 'prefix_input_source', terminalId, flag: event.inner.enabled };
+      return {
+        type: 'prefix_input_source',
+        terminalId,
+        flag: event.inner.enabled,
+      };
     case HerdrTerminalControlEvent_Tags.TerminalBell:
       return { type: 'terminal_bell', terminalId, count: event.inner.count };
     case HerdrTerminalControlEvent_Tags.Ignored:
@@ -1769,7 +2334,15 @@ function controlEvent(terminalId: string, event: HerdrTerminalControlEvent): Bri
 }
 
 const herdrTerminalEventSink: HerdrTerminalEventSink = {
-  terminalFrame(clientKey, terminalId, sequence, width, height, full, base64Bytes): void {
+  terminalFrame(
+    clientKey,
+    terminalId,
+    sequence,
+    width,
+    height,
+    full,
+    base64Bytes,
+  ): void {
     const handler = bridgeHandler(clientKey, terminalId);
     if (!handler) return;
     const inboundTraceCookie = terminalInboundTrace()?.jsReceived() ?? null;
@@ -1787,7 +2360,10 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
     });
   },
   graphicsFrame(clientKey, terminalId, bytes): void {
-    bridgeHandler(clientKey, terminalId)?.({
+    bridgeHandler(
+      clientKey,
+      terminalId,
+    )?.({
       type: 'graphics',
       terminalId,
       bytes,
@@ -1796,7 +2372,8 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
   control(clientKey, terminalId, event): void {
     const handler = bridgeHandler(clientKey, terminalId);
     handler?.(controlEvent(terminalId, event));
-    if (event.tag === HerdrTerminalControlEvent_Tags.Closed) removeBridgeHandler(clientKey, terminalId);
+    if (event.tag === HerdrTerminalControlEvent_Tags.Closed)
+      removeBridgeHandler(clientKey, terminalId);
   },
 };
 
@@ -1804,7 +2381,10 @@ const hostRuntimeEventSink = {
   event(event: HostRuntimeEvent): void {
     const { tag, inner } = event;
     if (tag === HostRuntimeEvent_Tags.SshShellData) {
-      runtimeSshShellHandlers.get(inner.runtimeId)?.get(inner.terminalId)?.data(inner.bytes);
+      runtimeSshShellHandlers
+        .get(inner.runtimeId)
+        ?.get(inner.terminalId)
+        ?.data(inner.bytes);
       return;
     }
     if (tag === HostRuntimeEvent_Tags.SshShellClosed) {
@@ -1828,10 +2408,19 @@ const hostRuntimeEventSink = {
         });
         break;
       case HostRuntimeEvent_Tags.ReconnectScheduled:
-        handler({ type: 'reconnect-scheduled', attempt: inner.attempt, delayMs: Number(inner.delayMs), reason: inner.reason });
+        handler({
+          type: 'reconnect-scheduled',
+          attempt: inner.attempt,
+          delayMs: Number(inner.delayMs),
+          reason: inner.reason,
+        });
         break;
       case HostRuntimeEvent_Tags.Reconnected:
-        handler({ type: 'reconnected', generation: Number(inner.generation), restoredTerminals: inner.restoredTerminals });
+        handler({
+          type: 'reconnected',
+          generation: Number(inner.generation),
+          restoredTerminals: inner.restoredTerminals,
+        });
         break;
       case HostRuntimeEvent_Tags.TerminalStateChanged:
         handler({
@@ -1850,12 +2439,14 @@ const hostRuntimeEventSink = {
           agentStatusTransitions: inner.agentStatusTransitions.map(
             transition => ({
               paneId: transition.paneId,
-              previous: transition.previous === undefined
-                ? undefined
-                : agentStatus(transition.previous),
-              current: transition.current === undefined
-                ? undefined
-                : agentStatus(transition.current),
+              previous:
+                transition.previous === undefined
+                  ? undefined
+                  : agentStatus(transition.previous),
+              current:
+                transition.current === undefined
+                  ? undefined
+                  : agentStatus(transition.current),
               revision: Number(transition.revision),
             }),
           ),
@@ -1871,10 +2462,16 @@ const hostRuntimeEventSink = {
         handler({ type: 'event-stream-closed', reason: inner.reason });
         break;
       case HostRuntimeEvent_Tags.EventSubscriptionRestored:
-        handler({ type: 'event-stream-restored', generation: Number(inner.generation) });
+        handler({
+          type: 'event-stream-restored',
+          generation: Number(inner.generation),
+        });
         break;
       case HostRuntimeEvent_Tags.TransferProgressChanged:
-        handler({ type: 'transfer-progress', progress: runtimeTransferProgress(inner.progress) });
+        handler({
+          type: 'transfer-progress',
+          progress: runtimeTransferProgress(inner.progress),
+        });
         break;
       case HostRuntimeEvent_Tags.PreviewStateChanged:
         handler({
@@ -1885,7 +2482,10 @@ const hostRuntimeEventSink = {
         });
         break;
       case HostRuntimeEvent_Tags.Diagnostic:
-        handler({ type: 'diagnostic', diagnostic: runtimeDiagnostic(inner.diagnostic) });
+        handler({
+          type: 'diagnostic',
+          diagnostic: runtimeDiagnostic(inner.diagnostic),
+        });
         break;
       case HostRuntimeEvent_Tags.FatalError:
         handler({ type: 'fatal-error', message: inner.message });
@@ -1896,16 +2496,16 @@ const hostRuntimeEventSink = {
 
 const agentTranscriptEventSink = {
   event(event: AgentTranscriptEvent): void {
-    const handlers = agentTranscriptHandlers.get(transcriptRoutingKey(
-      event.runtimeId,
-      Number(event.runtimeIncarnation),
-    ));
+    const handlers = agentTranscriptHandlers.get(
+      transcriptRoutingKey(event.runtimeId, Number(event.runtimeIncarnation)),
+    );
     const handler = handlers?.get(event.key);
     handler?.(nativeAgentUpdate(event));
-    const closed = event.update.deltas.some(delta => (
-      delta.tag === AgentTranscriptDelta_Tags.StatusChanged
-      && delta.inner.status === AgentTranscriptStatus.Closed
-    ));
+    const closed = event.update.deltas.some(
+      delta =>
+        delta.tag === AgentTranscriptDelta_Tags.StatusChanged &&
+        delta.inner.status === AgentTranscriptStatus.Closed,
+    );
     if (closed) handlers?.delete(event.key);
   },
 };
@@ -1918,15 +2518,20 @@ export class NativeHostRuntime {
   readonly runtimeId: string;
   readonly runtimeIncarnation: number;
   private readonly transcriptRoute: string;
+  private readonly agentChatRoutes = new Map<
+    string,
+    { bindingToken: string; transcriptKey: string }
+  >();
 
   constructor(
     private readonly runtime: HostRuntimeLike,
     lifecycleHandler?: (event: RuntimeLifecycleEvent) => void,
   ) {
     this.runtimeId = runtime.runtimeId();
-    this.runtimeIncarnation = typeof runtime.runtimeIncarnation === 'function'
-      ? Number(runtime.runtimeIncarnation())
-      : 0;
+    this.runtimeIncarnation =
+      typeof runtime.runtimeIncarnation === 'function'
+        ? Number(runtime.runtimeIncarnation())
+        : 0;
     this.transcriptRoute = transcriptRoutingKey(
       this.runtimeId,
       this.runtimeIncarnation,
@@ -1961,25 +2566,36 @@ export class NativeHostRuntime {
     label: string,
     launch: RuntimeTabLaunch,
   ): Promise<RuntimeTabCreationResult> {
-    const nativeLaunch = launch.type === 'shell'
-      ? HerdrTabLaunch.Shell.new()
-      : launch.type === 'agent'
-        ? HerdrTabLaunch.Agent.new({ kind: runtimeAgentKind(launch.kind), args: launch.args || [] })
+    const nativeLaunch =
+      launch.type === 'shell'
+        ? HerdrTabLaunch.Shell.new()
+        : launch.type === 'agent'
+        ? HerdrTabLaunch.Agent.new({
+            kind: runtimeAgentKind(launch.kind),
+            args: launch.args || [],
+          })
         : HerdrTabLaunch.Command.new({ command: launch.command });
-    const outcome = await this.runtime.createTabWithLaunch(workspaceId, label, nativeLaunch);
+    const outcome = await this.runtime.createTabWithLaunch(
+      workspaceId,
+      label,
+      nativeLaunch,
+    );
     const projected: RuntimeTabCreationResult = {
       type: 'tab_created',
       tab: tab(outcome.inner.tab),
       root_pane: pane(outcome.inner.rootPane),
     };
     if (outcome.tag === HerdrTabLaunchResult_Tags.LaunchFailed) {
-      const normalized = new Error(outcome.inner.failure.message) as RuntimeTabLaunchFailure;
+      const normalized = new Error(
+        outcome.inner.failure.message,
+      ) as RuntimeTabLaunchFailure;
       normalized.name = 'RuntimeTabLaunchError';
       normalized.code = 'TAB_LAUNCH_FAILED';
       normalized.created = projected;
-      normalized.launchType = outcome.inner.stage === HerdrTabLaunchStage.AgentStart
-        ? 'agent'
-        : 'command';
+      normalized.launchType =
+        outcome.inner.stage === HerdrTabLaunchStage.AgentStart
+          ? 'agent'
+          : 'command';
       normalized.nativeFailure = outcome.inner.failure;
       throw normalized;
     }
@@ -1998,14 +2614,23 @@ export class NativeHostRuntime {
     }
   }
 
-  async agentIntegrationStatus(kind: RuntimeAgentKind): Promise<RuntimeAgentIntegrationStatus> {
-    const status = await this.runtime.agentIntegrationStatus(runtimeAgentKind(kind));
+  async agentIntegrationStatus(
+    kind: RuntimeAgentKind,
+  ): Promise<RuntimeAgentIntegrationStatus> {
+    const status = await this.runtime.agentIntegrationStatus(
+      runtimeAgentKind(kind),
+    );
     switch (status) {
-      case AgentIntegrationStatus.Unknown: return 'unknown';
-      case AgentIntegrationStatus.NotInstalled: return 'not-installed';
-      case AgentIntegrationStatus.Current: return 'current';
-      case AgentIntegrationStatus.Outdated: return 'outdated';
-      case AgentIntegrationStatus.NeedsRepair: return 'needs-repair';
+      case AgentIntegrationStatus.Unknown:
+        return 'unknown';
+      case AgentIntegrationStatus.NotInstalled:
+        return 'not-installed';
+      case AgentIntegrationStatus.Current:
+        return 'current';
+      case AgentIntegrationStatus.Outdated:
+        return 'outdated';
+      case AgentIntegrationStatus.NeedsRepair:
+        return 'needs-repair';
     }
   }
 
@@ -2013,7 +2638,9 @@ export class NativeHostRuntime {
     kind: RuntimeAgentKind;
     messages: string[];
   }> {
-    const installed = await this.runtime.installAgentIntegration(runtimeAgentKind(kind));
+    const installed = await this.runtime.installAgentIntegration(
+      runtimeAgentKind(kind),
+    );
     return { kind, messages: [...installed.messages] };
   }
 
@@ -2022,6 +2649,7 @@ export class NativeHostRuntime {
     agentTranscriptHandlers.delete(this.transcriptRoute);
     runtimeSshShellHandlers.delete(this.runtimeId);
     bridgeHandlers.delete(this.runtimeId);
+    this.agentChatRoutes.clear();
     await this.runtime.disconnect();
   }
 
@@ -2029,9 +2657,13 @@ export class NativeHostRuntime {
     return this.runtime.recover(immediate, reason);
   }
 
-  status() { return this.runtime.status(); }
+  status() {
+    return this.runtime.status();
+  }
 
-  hostState(): RuntimeHostState { return runtimeHostState(this.runtime.hostState()); }
+  hostState(): RuntimeHostState {
+    return runtimeHostState(this.runtime.hostState());
+  }
 
   /** Bind this runtime to Rust-owned application state without exposing its raw handle. */
   attachToAppCore(core: AppCoreLike, sessionId: string): NativeAppCoreView {
@@ -2042,98 +2674,119 @@ export class NativeHostRuntime {
     return runtimeHostState(await this.runtime.refreshState());
   }
 
-  openAgentSession(
-    agentKind: 'codex' | 'opencode',
+  openAgentChat(
     terminalId: string,
-    sessionId: string,
-    cacheBlob?: ArrayBuffer,
     handler?: (event: NativeAgentTranscriptUpdate) => void,
-  ): { runtimeIncarnation: number; key: string; state: NativeAgentTranscriptState } {
-    const result = this.runtime.openAgentSession(
-      agentKind === 'opencode' ? AgentTranscriptKind.OpenCode : AgentTranscriptKind.Codex,
-      terminalId,
-      sessionId,
-      cacheBlob,
-    );
+  ): NativeAgentChatOpenResult {
+    const result = this.runtime.openAgentChat(terminalId);
+    if (result.tag === AgentChatOpenResult_Tags.NoChat) {
+      this.forgetAgentChatRoute(terminalId);
+      return {
+        type: 'no-chat',
+        terminalId: result.inner.terminalId,
+        reason: nativeAgentChatUnavailableReason(result.inner.reason),
+      };
+    }
+    const binding = nativeAgentChatBinding(result.inner.binding);
+    this.routeAgentChat(terminalId, binding, handler);
+    return { type: 'bound', binding };
+  }
+
+  currentAgentChat(
+    terminalId: string,
+    handler?: (event: NativeAgentTranscriptUpdate) => void,
+  ): NativeAgentChatBinding | undefined {
+    const current = this.runtime.currentAgentChat(terminalId);
+    if (!current) {
+      this.forgetAgentChatRoute(terminalId);
+      return undefined;
+    }
+    const binding = nativeAgentChatBinding(current);
+    this.routeAgentChat(terminalId, binding, handler);
+    return binding;
+  }
+
+  private routeAgentChat(
+    terminalId: string,
+    binding: NativeAgentChatBinding,
+    handler?: (event: NativeAgentTranscriptUpdate) => void,
+  ): void {
+    this.forgetAgentChatRoute(terminalId, binding.transcriptKey);
+    this.agentChatRoutes.set(terminalId, {
+      bindingToken: binding.bindingToken,
+      transcriptKey: binding.transcriptKey,
+    });
     if (handler) {
       let handlers = agentTranscriptHandlers.get(this.transcriptRoute);
       if (!handlers) {
         handlers = new Map();
         agentTranscriptHandlers.set(this.transcriptRoute, handlers);
       }
-      handlers.set(result.key, handler);
+      handlers.set(binding.transcriptKey, handler);
     }
-    return {
-      runtimeIncarnation: Number(
-        result.runtimeIncarnation ?? this.runtimeIncarnation,
-      ),
-      key: result.key,
-      state: nativeAgentTranscript(result.state),
-    };
   }
 
-  bindAgentSession(
-    agentKind: 'codex' | 'opencode',
-    terminalId: string,
-    sessionId: string,
-    handler?: (event: NativeAgentTranscriptUpdate) => void,
-  ): { runtimeIncarnation: number; key: string; state: NativeAgentTranscriptState } {
-    const result = this.runtime.bindAgentSession(
-      agentKind === 'opencode' ? AgentTranscriptKind.OpenCode : AgentTranscriptKind.Codex,
-      terminalId,
-      sessionId,
-    );
-    if (handler) {
-      let handlers = agentTranscriptHandlers.get(this.transcriptRoute);
-      if (!handlers) {
-        handlers = new Map();
-        agentTranscriptHandlers.set(this.transcriptRoute, handlers);
-      }
-      handlers.set(result.key, handler);
-    }
-    return {
-      runtimeIncarnation: Number(
-        result.runtimeIncarnation ?? this.runtimeIncarnation,
-      ),
-      key: result.key,
-      state: nativeAgentTranscript(result.state),
-    };
-  }
-
-  startAgentSession(
-    terminalId: string,
-    key: string,
+  startAgentChat(
+    bindingToken: string,
     cacheBlob?: ArrayBuffer,
-  ): NativeAgentTranscriptState {
-    return nativeAgentTranscript(this.runtime.startAgentSession(terminalId, key, cacheBlob));
+  ): NativeAgentChatStartResult {
+    const result = this.runtime.startAgentChat(bindingToken, cacheBlob);
+    if (result.tag === AgentChatStartResult_Tags.StaleBinding) {
+      return { type: 'stale-binding' };
+    }
+    return {
+      type: 'started',
+      state: nativeAgentTranscript(result.inner.state),
+    };
   }
 
   agentTranscript(key: string): NativeAgentTranscriptState {
     return nativeAgentTranscript(this.runtime.agentTranscript(key));
   }
 
-  closeAgentSession(key: string): void {
-    agentTranscriptHandlers.get(this.transcriptRoute)?.delete(key);
-    this.runtime.closeAgentSession(key);
+  detachAgentChat(terminalId: string): boolean {
+    // Unroute callbacks before native detach. Native may synchronously close a
+    // resource, but an intentional release is not a transcript failure.
+    this.forgetAgentChatRoute(terminalId);
+    return this.runtime.detachAgentChat(terminalId);
   }
 
-  closeAgentTerminal(terminalId: string): string | undefined {
-    const released = this.runtime.closeAgentTerminal(terminalId);
-    if (released) agentTranscriptHandlers.get(this.transcriptRoute)?.delete(released);
-    return released;
+  private forgetAgentChatRoute(
+    terminalId: string,
+    replacementKey?: string,
+  ): void {
+    const previous = this.agentChatRoutes.get(terminalId);
+    this.agentChatRoutes.delete(terminalId);
+    if (!previous || previous.transcriptKey === replacementKey) return;
+    const shared = [...this.agentChatRoutes.values()].some(
+      route => route.transcriptKey === previous.transcriptKey,
+    );
+    if (!shared) {
+      agentTranscriptHandlers
+        .get(this.transcriptRoute)
+        ?.delete(previous.transcriptKey);
+    }
   }
 
   confirmAgentTranscriptCache(confirmationToken: string): boolean {
     return this.runtime.confirmAgentTranscriptCache(confirmationToken);
   }
 
-  resolvedSocketPath(): string | undefined { return this.runtime.resolvedSocketPath(); }
+  resolvedSocketPath(): string | undefined {
+    return this.runtime.resolvedSocketPath();
+  }
 
-  resolveHerdrSocketPath(): Promise<string> { return this.runtime.resolveControlSocket(); }
+  resolveHerdrSocketPath(): Promise<string> {
+    return this.runtime.resolveControlSocket();
+  }
 
-  async requestHerdrApi(request: RuntimeHerdrRequest): Promise<RuntimeHerdrResult> {
+  async requestHerdrApi(
+    request: RuntimeHerdrRequest,
+  ): Promise<RuntimeHerdrResult> {
     try {
-      return apiResult(await this.runtime.controlRequest(controlRequest(request)));
+      return apiResult(
+        await this.runtime.controlRequest(controlRequest(request)),
+      );
     } catch (error) {
       throw controlError(error);
     }
@@ -2150,7 +2803,14 @@ export class NativeHostRuntime {
   ): Promise<void> {
     setBridgeHandler(this.runtimeId, terminalId, handler);
     try {
-      await this.runtime.openTerminal(terminalId, takeover, columns, rows, cellWidthPx, cellHeightPx);
+      await this.runtime.openTerminal(
+        terminalId,
+        takeover,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+      );
     } catch (error) {
       removeBridgeHandler(this.runtimeId, terminalId, handler);
       throw bridgeError(error);
@@ -2162,22 +2822,38 @@ export class NativeHostRuntime {
   }
 
   herdrBridgeInput(terminalId: string, text: string): Promise<void> {
-    try { this.runtime.terminalInput(terminalId, text); return Promise.resolve(); }
-    catch (error) { return Promise.reject(bridgeError(error)); }
+    try {
+      this.runtime.terminalInput(terminalId, text);
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(bridgeError(error));
+    }
   }
 
-  herdrBridgeResize(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, forceDispatch = false): Promise<RuntimeTerminalResizeOutcome> {
+  herdrBridgeResize(
+    terminalId: string,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    forceDispatch = false,
+  ): Promise<RuntimeTerminalResizeOutcome> {
     try {
-      return Promise.resolve(runtimeTerminalResizeOutcome(this.runtime.resizeTerminal(
-        terminalId,
-        columns,
-        rows,
-        cellWidthPx,
-        cellHeightPx,
-        forceDispatch,
-      )));
+      return Promise.resolve(
+        runtimeTerminalResizeOutcome(
+          this.runtime.resizeTerminal(
+            terminalId,
+            columns,
+            rows,
+            cellWidthPx,
+            cellHeightPx,
+            forceDispatch,
+          ),
+        ),
+      );
+    } catch (error) {
+      return Promise.reject(bridgeError(error));
     }
-    catch (error) { return Promise.reject(bridgeError(error)); }
   }
 
   herdrBridgeGeometry(terminalId: string): RuntimeTerminalGeometry | undefined {
@@ -2185,15 +2861,36 @@ export class NativeHostRuntime {
     return geometry ? runtimeTerminalGeometry(geometry) : undefined;
   }
 
-  herdrBridgeProtocolState(terminalId: string): { kittyKeyboardReportAll: boolean } {
+  herdrBridgeProtocolState(terminalId: string): {
+    kittyKeyboardReportAll: boolean;
+  } {
     return {
-      kittyKeyboardReportAll: this.runtime.terminalKittyKeyboardReportAll(terminalId),
+      kittyKeyboardReportAll:
+        this.runtime.terminalKittyKeyboardReportAll(terminalId),
     };
   }
 
-  herdrBridgeScroll(terminalId: string, up: boolean, lines: number, column?: number, row?: number, modifiers = 0): Promise<void> {
-    try { this.runtime.scrollTerminal(terminalId, up, lines, column, row, modifiers); return Promise.resolve(); }
-    catch (error) { return Promise.reject(bridgeError(error)); }
+  herdrBridgeScroll(
+    terminalId: string,
+    up: boolean,
+    lines: number,
+    column?: number,
+    row?: number,
+    modifiers = 0,
+  ): Promise<void> {
+    try {
+      this.runtime.scrollTerminal(
+        terminalId,
+        up,
+        lines,
+        column,
+        row,
+        modifiers,
+      );
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(bridgeError(error));
+    }
   }
 
   closeHerdrBridge(terminalId: string): void {
@@ -2206,9 +2903,13 @@ export class NativeHostRuntime {
     this.runtime.closeAllTerminals();
   }
 
-  hasHerdrBridge(terminalId: string): boolean { return this.runtime.hasTerminal(terminalId); }
+  hasHerdrBridge(terminalId: string): boolean {
+    return this.runtime.hasTerminal(terminalId);
+  }
 
-  isHerdrBridgeOpening(terminalId: string): boolean { return this.runtime.isTerminalOpening(terminalId); }
+  isHerdrBridgeOpening(terminalId: string): boolean {
+    return this.runtime.isTerminalOpening(terminalId);
+  }
 
   async openSshShell(
     terminalId: string,
@@ -2243,15 +2944,24 @@ export class NativeHostRuntime {
     this.runtime.sshShellInput(terminalId, bytes);
   }
 
-  resizeSshShell(terminalId: string, columns: number, rows: number, cellWidthPx: number, cellHeightPx: number, forceDispatch = false): RuntimeTerminalResizeOutcome {
-    return runtimeTerminalResizeOutcome(this.runtime.resizeSshShell(
-      terminalId,
-      columns,
-      rows,
-      cellWidthPx,
-      cellHeightPx,
-      forceDispatch,
-    ));
+  resizeSshShell(
+    terminalId: string,
+    columns: number,
+    rows: number,
+    cellWidthPx: number,
+    cellHeightPx: number,
+    forceDispatch = false,
+  ): RuntimeTerminalResizeOutcome {
+    return runtimeTerminalResizeOutcome(
+      this.runtime.resizeSshShell(
+        terminalId,
+        columns,
+        rows,
+        cellWidthPx,
+        cellHeightPx,
+        forceDispatch,
+      ),
+    );
   }
 
   closeSshShell(terminalId: string): void {
@@ -2259,16 +2969,22 @@ export class NativeHostRuntime {
     this.runtime.closeSshShell(terminalId);
   }
 
-  hasSshShell(terminalId: string): boolean { return this.runtime.hasSshShell(terminalId); }
+  hasSshShell(terminalId: string): boolean {
+    return this.runtime.hasSshShell(terminalId);
+  }
 
   sshShellGeometry(terminalId: string): RuntimeTerminalGeometry | undefined {
     const geometry = this.runtime.sshShellGeometry(terminalId);
     return geometry ? runtimeTerminalGeometry(geometry) : undefined;
   }
 
-  execute(command: string): Promise<string> { return this.runtime.execute(command); }
+  execute(command: string): Promise<string> {
+    return this.runtime.execute(command);
+  }
 
-  remoteHome(): Promise<string> { return this.runtime.remoteHome(); }
+  remoteHome(): Promise<string> {
+    return this.runtime.remoteHome();
+  }
 
   async measureHostLatency(): Promise<RuntimeHostLatencyMeasurement> {
     return runtimeHostLatency(await this.runtime.measureHostLatency());
@@ -2283,7 +2999,10 @@ export class NativeHostRuntime {
   }
 
   readRemoteText(path: string, maxBytes?: number): Promise<string> {
-    return this.runtime.readRemoteText(path, maxBytes === undefined ? undefined : BigInt(maxBytes));
+    return this.runtime.readRemoteText(
+      path,
+      maxBytes === undefined ? undefined : BigInt(maxBytes),
+    );
   }
 
   createRemoteDirectory(path: string): Promise<void> {
@@ -2301,13 +3020,16 @@ export class NativeHostRuntime {
   private transfer(id: string): RuntimeTransfer {
     return {
       id,
-      result: this.runtime.awaitTransfer(id).then((result: NativeTransferResult) => ({
-        transferId: result.transferId,
-        localPath: result.localPath,
-        remotePath: result.remotePath,
-      })).catch(error => {
-        throw hostRuntimeError(error);
-      }),
+      result: this.runtime
+        .awaitTransfer(id)
+        .then((result: NativeTransferResult) => ({
+          transferId: result.transferId,
+          localPath: result.localPath,
+          remotePath: result.remotePath,
+        }))
+        .catch(error => {
+          throw hostRuntimeError(error);
+        }),
     };
   }
 
@@ -2320,7 +3042,9 @@ export class NativeHostRuntime {
   }
 
   startDownload(remotePath: string, localDirectory: string): RuntimeTransfer {
-    return this.transfer(this.runtime.startDownload(remotePath, localDirectory));
+    return this.transfer(
+      this.runtime.startDownload(remotePath, localDirectory),
+    );
   }
 
   transferProgress(transferId: string): RuntimeTransferProgress | undefined {
@@ -2328,21 +3052,27 @@ export class NativeHostRuntime {
     return progress && runtimeTransferProgress(progress);
   }
 
-  cancelTransfer(transferId: string): boolean { return this.runtime.cancelTransfer(transferId); }
+  cancelTransfer(transferId: string): boolean {
+    return this.runtime.cancelTransfer(transferId);
+  }
 
-  async discoverGitRepository(path: string): Promise<RuntimeGitRepository | null> {
-    return await this.runtime.discoverGitRepository(path) ?? null;
+  async discoverGitRepository(
+    path: string,
+  ): Promise<RuntimeGitRepository | null> {
+    return (await this.runtime.discoverGitRepository(path)) ?? null;
   }
 
   async gitStatus(root: string): Promise<RuntimeGitStatusEntry[]> {
     return (await this.runtime.gitStatus(root)).map(runtimeGitStatus);
   }
 
-  async gitDiff(repository: RuntimeGitRepository, status: RuntimeGitStatusEntry): Promise<RuntimeGitDiff> {
-    return runtimeGitDiff(await this.runtime.gitDiff(
-      repository,
-      nativeGitStatus(status),
-    ));
+  async gitDiff(
+    repository: RuntimeGitRepository,
+    status: RuntimeGitStatusEntry,
+  ): Promise<RuntimeGitDiff> {
+    return runtimeGitDiff(
+      await this.runtime.gitDiff(repository, nativeGitStatus(status)),
+    );
   }
 
   async startWebPreview(remoteUrl: string): Promise<RuntimePreviewInfo> {
@@ -2353,12 +3083,17 @@ export class NativeHostRuntime {
     return runtimePreview(await this.runtime.startHtmlPreview(remotePath));
   }
 
-  async startRemoteFilePreview(remotePath: string): Promise<RuntimePreviewInfo> {
-    return runtimePreview(await this.runtime.startRemoteFilePreview(remotePath));
+  async startRemoteFilePreview(
+    remotePath: string,
+  ): Promise<RuntimePreviewInfo> {
+    return runtimePreview(
+      await this.runtime.startRemoteFilePreview(remotePath),
+    );
   }
 
-  stopPreview(previewId: string): Promise<void> { return this.runtime.stopPreview(previewId); }
-
+  stopPreview(previewId: string): Promise<void> {
+    return this.runtime.stopPreview(previewId);
+  }
 }
 
 /** Rust-owned application/session state with a React-friendly typed projection. */
@@ -2374,11 +3109,9 @@ export class NativeAppCore {
     requestedHostId?: string,
     requestedWorkspaceId?: string,
   ): HerdProjection {
-    return herdProjection(this.core.herdView(
-      metadata,
-      requestedHostId,
-      requestedWorkspaceId,
-    ));
+    return herdProjection(
+      this.core.herdView(metadata, requestedHostId, requestedWorkspaceId),
+    );
   }
 
   openSession(
@@ -2386,7 +3119,9 @@ export class NativeAppCore {
     hostId: string,
     activate = true,
   ): AppCoreProjection {
-    return appCoreProjection(this.core.openSession(sessionId, hostId, activate));
+    return appCoreProjection(
+      this.core.openSession(sessionId, hostId, activate),
+    );
   }
 
   attachRuntime(
@@ -2406,12 +3141,14 @@ export class NativeAppCore {
     error?: string,
     reconnectAttempt?: number,
   ): AppCoreProjection {
-    return appCoreProjection(this.core.setPlaceholderConnection(
-      sessionId,
-      nativeAppConnectionStatus(status),
-      error,
-      reconnectAttempt,
-    ));
+    return appCoreProjection(
+      this.core.setPlaceholderConnection(
+        sessionId,
+        nativeAppConnectionStatus(status),
+        error,
+        reconnectAttempt,
+      ),
+    );
   }
 
   selectSession(sessionId: string): AppCoreProjection {
@@ -2465,23 +3202,26 @@ export class NativeAppCore {
     error?: string,
     reconnectAttempt = 0,
   ): AppCoreProjection {
-    const nativeState = state === 'opening'
-      ? HostTerminalState.Opening
-      : state === 'attached'
+    const nativeState =
+      state === 'opening'
+        ? HostTerminalState.Opening
+        : state === 'attached'
         ? HostTerminalState.Attached
         : state === 'restoring'
-          ? HostTerminalState.Restoring
-          : state === 'failed'
-            ? HostTerminalState.Failed
-            : HostTerminalState.Closed;
-    return appCoreProjection(this.core.updateTerminalLifecycle(
-      sessionId,
-      terminalId,
-      nativeState,
-      retrying,
-      error,
-      reconnectAttempt,
-    ));
+        ? HostTerminalState.Restoring
+        : state === 'failed'
+        ? HostTerminalState.Failed
+        : HostTerminalState.Closed;
+    return appCoreProjection(
+      this.core.updateTerminalLifecycle(
+        sessionId,
+        terminalId,
+        nativeState,
+        retrying,
+        error,
+        reconnectAttempt,
+      ),
+    );
   }
 }
 
@@ -2535,15 +3275,19 @@ export class NativeHostProfileStore {
     previousCreatedAt: string | undefined,
     now: string,
   ): NativeHostProfile {
-    return nativeHostProfile(this.store.normalizeProfile(
-      rustHostProfile(profile),
-      previousCreatedAt,
-      now,
-    ));
+    return nativeHostProfile(
+      this.store.normalizeProfile(
+        rustHostProfile(profile),
+        previousCreatedAt,
+        now,
+      ),
+    );
   }
 
   upsert(profile: NativeHostProfile, now: string): HostProfileStoreProjection {
-    return hostProfileStoreProjection(this.store.upsert(rustHostProfile(profile), now));
+    return hostProfileStoreProjection(
+      this.store.upsert(rustHostProfile(profile), now),
+    );
   }
 
   markDisconnected(id: string, now: string): HostProfileStoreProjection {
@@ -2554,8 +3298,13 @@ export class NativeHostProfileStore {
     return hostProfileStoreProjection(this.store.remove(id, now));
   }
 
-  resolveJumpChain(profileId: string, jumpHostId?: string): NativeHostProfile[] {
-    return this.store.resolveJumpChain(profileId, jumpHostId).map(nativeHostProfile);
+  resolveJumpChain(
+    profileId: string,
+    jumpHostId?: string,
+  ): NativeHostProfile[] {
+    return this.store
+      .resolveJumpChain(profileId, jumpHostId)
+      .map(nativeHostProfile);
   }
 
   jumpCandidates(profileId: string): NativeHostProfile[] {
@@ -2594,23 +3343,28 @@ const SSH_ERROR_TAG_CODES: Readonly<Record<string, string>> = {
 
 function sshError(error: unknown): Error {
   const native = nativeErrorParts(error);
-  const details = native.tag === 'HostKeyUnknown' || native.tag === 'HostKeyChanged'
-    ? native.inner[0]
-    : undefined;
-  const message = native.tag === 'HostKeyUnknown'
-    ? 'unknown SSH host key'
-    : native.tag === 'HostKeyChanged'
+  const details =
+    native.tag === 'HostKeyUnknown' || native.tag === 'HostKeyChanged'
+      ? native.inner[0]
+      : undefined;
+  const message =
+    native.tag === 'HostKeyUnknown'
+      ? 'unknown SSH host key'
+      : native.tag === 'HostKeyChanged'
       ? 'SSH host key changed'
       : native.tag === 'UnsupportedHostCertificate'
-        ? 'SSH host certificates are not supported'
-        : typeof native.inner[0] === 'string'
-          ? native.inner[0]
-          : error instanceof Error
-            ? error.message
-            : String(error);
+      ? 'SSH host certificates are not supported'
+      : typeof native.inner[0] === 'string'
+      ? native.inner[0]
+      : error instanceof Error
+      ? error.message
+      : String(error);
   const result = new Error(message);
   result.name = 'SshError';
-  if (native.tag) Object.assign(result, { code: SSH_ERROR_TAG_CODES[native.tag] || 'UNKNOWN' });
+  if (native.tag)
+    Object.assign(result, {
+      code: SSH_ERROR_TAG_CODES[native.tag] || 'UNKNOWN',
+    });
   if (details !== undefined) Object.assign(result, { details });
   return result;
 }
@@ -2619,16 +3373,21 @@ export function setKnownHosts(contents: string): void {
   setKnownHostsRust(contents);
 }
 
-export function setTrustedHostKeys(entries: Array<{
-  host: string;
-  port: number;
-  keyType: string;
-  publicKey: string;
-}>): void {
+export function setTrustedHostKeys(
+  entries: Array<{
+    host: string;
+    port: number;
+    keyType: string;
+    publicKey: string;
+  }>,
+): void {
   setTrustedHostKeysRust(entries);
 }
 
-export function getKeyDetails(privateKey: string, passphrase?: string): KeyDetails {
+export function getKeyDetails(
+  privateKey: string,
+  passphrase?: string,
+): KeyDetails {
   try {
     return getSshKeyDetailsRust(privateKey, passphrase);
   } catch (error) {

@@ -44,6 +44,7 @@ pub struct TranscriptJsonlFramer {
     buffer: Vec<u8>,
     received_offset: u64,
     committable_offset: u64,
+    discarding_oversized_line: bool,
 }
 
 impl TranscriptJsonlFramer {
@@ -52,6 +53,7 @@ impl TranscriptJsonlFramer {
             buffer: Vec::new(),
             received_offset: offset,
             committable_offset: offset,
+            discarding_oversized_line: false,
         }
     }
 
@@ -71,11 +73,31 @@ impl TranscriptJsonlFramer {
         self.received_offset = self
             .received_offset
             .saturating_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX));
+        let mut lines = Vec::new();
+        let chunk = if self.discarding_oversized_line {
+            let Some(relative) = chunk.iter().position(|byte| *byte == b'\n') else {
+                return Ok(lines);
+            };
+            let consumed = relative + 1;
+            let end_offset = self
+                .received_offset
+                .saturating_sub(u64::try_from(chunk.len() - consumed).unwrap_or(0));
+            lines.push(FramedLine {
+                raw_line: String::new(),
+                end_offset,
+                parsed: Err(TranscriptParseError::LineTooLarge.to_string()),
+            });
+            self.discarding_oversized_line = false;
+            &chunk[consumed..]
+        } else {
+            chunk
+        };
         self.buffer.extend_from_slice(chunk);
         if self.buffer.len() > MAX_TRANSCRIPT_LINE_BYTES && !self.buffer.contains(&b'\n') {
-            return Err(TranscriptParseError::LineTooLarge);
+            self.buffer.clear();
+            self.discarding_oversized_line = true;
+            return Ok(lines);
         }
-        let mut lines = Vec::new();
         let mut consumed = 0usize;
         while let Some(relative) = self.buffer[consumed..]
             .iter()
@@ -83,23 +105,35 @@ impl TranscriptJsonlFramer {
         {
             let end = consumed + relative + 1;
             if end - consumed > MAX_TRANSCRIPT_LINE_BYTES {
-                return Err(TranscriptParseError::LineTooLarge);
+                let end_offset = self
+                    .received_offset
+                    .saturating_sub(u64::try_from(self.buffer.len() - end).unwrap_or(0));
+                lines.push(FramedLine {
+                    raw_line: String::new(),
+                    end_offset,
+                    parsed: Err(TranscriptParseError::LineTooLarge.to_string()),
+                });
+                consumed = end;
+                continue;
             }
             let physical = &self.buffer[consumed..end];
             let mut content = &physical[..physical.len() - 1];
             if content.last() == Some(&b'\r') {
                 content = &content[..content.len() - 1];
             }
-            let raw_line = std::str::from_utf8(content)
-                .map_err(|_| TranscriptParseError::InvalidUtf8)?
-                .to_owned();
             let end_offset = self
                 .received_offset
                 .saturating_sub(u64::try_from(self.buffer.len() - end).unwrap_or(0));
-            let parsed = if content.is_empty() {
-                Ok(Value::Null)
-            } else {
-                serde_json::from_slice(content).map_err(|error| error.to_string())
+            let (raw_line, parsed) = match std::str::from_utf8(content) {
+                Ok(raw_line) if content.is_empty() => (raw_line.to_owned(), Ok(Value::Null)),
+                Ok(raw_line) => (
+                    raw_line.to_owned(),
+                    serde_json::from_slice(content).map_err(|error| error.to_string()),
+                ),
+                Err(_) => (
+                    String::new(),
+                    Err(TranscriptParseError::InvalidUtf8.to_string()),
+                ),
             };
             if parsed.is_ok() {
                 self.committable_offset = end_offset;
@@ -115,7 +149,8 @@ impl TranscriptJsonlFramer {
             self.buffer.drain(..consumed);
         }
         if self.buffer.len() > MAX_TRANSCRIPT_LINE_BYTES {
-            return Err(TranscriptParseError::LineTooLarge);
+            self.buffer.clear();
+            self.discarding_oversized_line = true;
         }
         Ok(lines)
     }
@@ -1666,18 +1701,79 @@ mod tests {
     }
 
     #[test]
-    fn invalid_utf8_and_oversized_line_are_rejected_without_panic() {
+    fn invalid_utf8_line_is_skipped_without_hiding_later_records() {
         let mut framer = TranscriptJsonlFramer::default();
-        assert_eq!(
-            framer.push(&[0xff, b'\n']).unwrap_err(),
-            TranscriptParseError::InvalidUtf8
+        let valid = record(
+            "event_msg",
+            serde_json::json!({"type":"agent_message","message":"latest"}),
         );
-        let mut framer = TranscriptJsonlFramer::default();
+        let mut bytes = vec![0xff, b'\n'];
+        bytes.extend_from_slice(&valid);
+        let lines = framer.push(&bytes).unwrap();
+
+        assert_eq!(lines.len(), 2);
         assert_eq!(
-            framer
-                .push(&vec![b'x'; MAX_TRANSCRIPT_LINE_BYTES + 1])
-                .unwrap_err(),
-            TranscriptParseError::LineTooLarge
+            lines[0].parsed,
+            Err(TranscriptParseError::InvalidUtf8.to_string())
+        );
+        assert!(lines[1].parsed.is_ok());
+        assert_eq!(framer.committable_offset(), bytes.len() as u64);
+    }
+
+    #[test]
+    fn oversized_line_is_skipped_and_later_records_remain_parseable() {
+        let mut framer = TranscriptJsonlFramer::default();
+        let oversized = vec![b'x'; MAX_TRANSCRIPT_LINE_BYTES + 1];
+        assert!(framer.push(&oversized).unwrap().is_empty());
+        assert_eq!(framer.partial_len(), 0);
+
+        let valid = record(
+            "event_msg",
+            serde_json::json!({"type":"agent_message","message":"latest"}),
+        );
+        let mut suffix = vec![b'\n'];
+        suffix.extend_from_slice(&valid);
+        let lines = framer.push(&suffix).unwrap();
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0].parsed,
+            Err(TranscriptParseError::LineTooLarge.to_string())
+        );
+        assert!(lines[1].parsed.is_ok());
+        assert_eq!(
+            framer.committable_offset(),
+            u64::try_from(oversized.len() + suffix.len()).unwrap()
+        );
+    }
+
+    #[test]
+    fn oversized_complete_line_does_not_hide_a_following_agent_update() {
+        let mut bytes = vec![b'x'; MAX_TRANSCRIPT_LINE_BYTES + 1];
+        bytes.push(b'\n');
+        bytes.extend_from_slice(&record(
+            "event_msg",
+            serde_json::json!({"type":"agent_message","message":"latest"}),
+        ));
+        let mut core = CodexSessionCore::new("thread");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), bytes.len() as u64);
+
+        let result = core.ingest(binding.source_generation, &bytes).unwrap();
+
+        assert_eq!(result.malformed_records, 1);
+        assert_eq!(
+            text_parts(&core.state(), AgentMessageRole::Assistant),
+            ["latest"]
+        );
+
+        let cache = core.cache_blob().unwrap();
+        let mut restored = CodexSessionCore::new("thread");
+        restored.restore_cache(&cache).unwrap();
+        let rebound = restored.bind_source("/rollout".into(), "1:2".into(), bytes.len() as u64);
+        assert_eq!(rebound.start_offset, bytes.len() as u64);
+        assert_eq!(
+            text_parts(&restored.state(), AgentMessageRole::Assistant),
+            ["latest"]
         );
     }
 

@@ -1,361 +1,259 @@
 import type {
+  NativeAgentChatBinding,
   NativeAgentTranscriptState,
   NativeAgentTranscriptUpdate,
 } from 'react-native-whip-ssh';
 
-import { MemoryAgentChatCache } from '../src/services/agentChatCache';
-import { settledPromise } from '../src/lib/promises';
 import {
-  CodexTranscriptService,
+  agentTranscriptReadiness,
+  NativeTranscriptService,
   type NativeTranscriptTransport,
 } from '../src/services/CodexTranscriptService';
+import { MemoryAgentChatCache } from '../src/services/agentChatCache';
+import {
+  AgentChatPresentationPhase,
+  requestChatPresentation,
+  revealPreparedChat,
+} from '../src/lib/agentChatPresentation';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
-const nativeKey = `profile\ncodex\n${sessionId}`;
+const transcriptKey = `profile\ncodex\n${sessionId}`;
 
-function state(revision: number, text = 'hello'): NativeAgentTranscriptState {
+function state(
+  status: NativeAgentTranscriptState['status'] = 'live',
+  revision = 1,
+): NativeAgentTranscriptState {
   return {
     sessionId,
     agent: 'codex',
     revision,
-    status: 'live',
-    messages: [{
-      id: 'message:1',
-      role: 'assistant',
-      parts: [{ type: 'text', id: 'part:1', text }],
-      diffs: [],
-    }],
-    turns: [{
-      id: 'turn:1',
-      assistantMessageIds: ['message:1'],
-      status: 'idle',
-      diffs: [],
-    }],
+    status,
+    messages: [],
+    turns: [],
   };
 }
 
-function fakeTransport(initial = state(1), runtimeIncarnation = 1) {
+function binding(
+  terminalId = 'terminal-1',
+  token = 'binding-1',
+  current = state(),
+): NativeAgentChatBinding {
+  return {
+    runtimeIncarnation: 1,
+    bindingToken: token,
+    bindingGeneration: Number(token.replace(/\D/g, '')) || 1,
+    terminalId,
+    paneId: `pane-${terminalId}`,
+    agent: 'codex',
+    sessionId,
+    transcriptKey,
+    state: current,
+  };
+}
+
+function fakeTransport(initial = state()) {
   let current = initial;
+  let nextOpen: ReturnType<typeof binding> | null = binding(
+    'terminal-1',
+    'binding-1',
+    initial,
+  );
   let handler: ((event: NativeAgentTranscriptUpdate) => void) | undefined;
-  const terminals = new Set<string>();
   const value: NativeTranscriptTransport = {
-    bindAgentSession: jest.fn((_agent, terminalId, _sessionId, next) => {
-      terminals.add(terminalId);
-      handler = next;
-      return { runtimeIncarnation, key: nativeKey, state: current };
+    openAgentChat: jest.fn((terminalId, nextHandler) => {
+      handler = nextHandler;
+      if (!nextOpen) {
+        return {
+          type: 'no-chat' as const,
+          terminalId,
+          reason: 'unsupported-pane' as const,
+        };
+      }
+      return { type: 'bound' as const, binding: { ...nextOpen, terminalId } };
     }),
-    startAgentSession: jest.fn((_terminalId, _key, _cache) => current),
+    currentAgentChat: jest.fn((terminalId, nextHandler) => {
+      handler = nextHandler;
+      return nextOpen ? { ...nextOpen, terminalId } : undefined;
+    }),
+    startAgentChat: jest.fn(() => ({
+      type: 'started' as const,
+      state: current,
+    })),
     agentTranscript: jest.fn(() => current),
-    closeAgentTerminal: jest.fn((terminalId: string) => {
-      terminals.delete(terminalId);
-      return terminals.size ? undefined : nativeKey;
-    }),
+    detachAgentChat: jest.fn(() => true),
     confirmAgentTranscriptCache: jest.fn(() => true),
   };
   return {
     value,
-    update(
+    noChat() {
+      nextOpen = null;
+    },
+    rebind(next: NativeAgentChatBinding) {
+      nextOpen = next;
+      current = next.state;
+    },
+    emit(
       update: Omit<NativeAgentTranscriptUpdate, 'key' | 'runtimeIncarnation'>,
-      snapshot?: NativeAgentTranscriptState,
     ) {
-      if (snapshot) current = snapshot;
-      handler?.({ runtimeIncarnation, key: nativeKey, ...update });
+      handler?.({ key: transcriptKey, runtimeIncarnation: 1, ...update });
+    },
+    emitClosedDuringDetach() {
+      jest.mocked(value.detachAgentChat).mockImplementationOnce(() => {
+        handler?.({
+          key: transcriptKey,
+          runtimeIncarnation: 1,
+          revision: 2,
+          deltas: [{ type: 'status-changed', status: 'closed' }],
+        });
+        return true;
+      });
     },
   };
 }
 
-function cacheWrite(confirmationToken: string, bytes = [8, 9]): NonNullable<NativeAgentTranscriptUpdate['cacheWrite']> {
-  return {
-    namespace: 'profile', key: nativeKey, blob: new Uint8Array(bytes).buffer,
-    confirmationToken,
-  };
-}
-
 async function flush(): Promise<void> {
-  for (let index = 0; index < 12; index += 1) await Promise.resolve();
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
 }
 
-function assistantText(service: CodexTranscriptService, key: string): string | undefined {
-  const value = service.getState(key)?.transcript.messages[0]?.parts[0];
-  return value?.type === 'text' ? value.text : undefined;
+function openedToken(
+  service: NativeTranscriptService,
+  transport: NativeTranscriptTransport,
+): string {
+  const result = service.activate('host', 'terminal-1', transport);
+  if (result.type !== 'bound') throw new Error('expected a binding');
+  return result.binding.bindingToken;
 }
 
-describe('Codex native transcript facade', () => {
-  test('treats a failed snapshot as loading while its native retry starts', async () => {
-    const unavailable = state(4);
-    unavailable.status = 'unavailable';
-    unavailable.error = 'rollout not created yet';
-    unavailable.messages = [];
-    unavailable.turns = [];
-    const remote = fakeTransport(unavailable);
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-
-    const key = service.activate(
-      'host-runtime',
-      'terminal-1',
-      sessionId,
-      remote.value,
-    );
-
-    expect(service.getState(key)).toEqual(expect.objectContaining({
-      revision: 4,
-      status: 'loading',
-      error: undefined,
-    }));
-    await flush();
-    expect(remote.value.startAgentSession).toHaveBeenCalled();
-    expect(service.getState(key)?.status).toBe('loading');
-  });
-
-  test('hands an opaque cache blob to Rust and projects the typed initial state', async () => {
+describe('Rust-owned agent Chat projection', () => {
+  test('passes only the native binding token and opaque cache back to Rust', async () => {
     const cache = new MemoryAgentChatCache();
-    const blob = new Uint8Array([1, 2, 3]).buffer;
-    await cache.saveNative({ namespace: 'profile', key: nativeKey, blob });
+    await cache.saveNative({
+      namespace: 'profile',
+      key: transcriptKey,
+      blob: new Uint8Array([1, 2, 3]).buffer,
+    });
     const remote = fakeTransport();
-    const service = new CodexTranscriptService(cache);
-    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
+    const service = new NativeTranscriptService(cache);
+
+    const token = openedToken(service, remote.value);
     await flush();
 
-    expect(remote.value.bindAgentSession).toHaveBeenCalledWith(
-      'codex', 'terminal-1', sessionId, expect.any(Function),
+    expect(remote.value.openAgentChat).toHaveBeenCalledWith(
+      'terminal-1',
+      expect.any(Function),
     );
-    expect(remote.value.startAgentSession).toHaveBeenCalledWith(
-      'terminal-1', nativeKey, expect.any(ArrayBuffer),
+    expect(remote.value.startAgentChat).toHaveBeenCalledWith(
+      token,
+      expect.any(ArrayBuffer),
     );
-    const passed = jest.mocked(remote.value.startAgentSession).mock.calls[0][2];
-    expect([...new Uint8Array(passed!)]).toEqual([1, 2, 3]);
-    expect(service.getState(key)).toEqual(expect.objectContaining({ revision: 1, status: 'live' }));
-    expect(assistantText(service, key)).toBe('hello');
+    const blob = jest.mocked(remote.value.startAgentChat).mock.calls[0][1];
+    expect([...new Uint8Array(blob!)]).toEqual([1, 2, 3]);
   });
 
-  test('uses monotonic native revisions and ignores an older callback', async () => {
+  test('a native no-chat result creates no transcript lifecycle', async () => {
     const remote = fakeTransport();
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
-    await flush();
-    remote.update({ revision: 2, deltas: [{ type: 'message-upserted', index: 0, message: state(2, 'new').messages[0] }] });
-    remote.update({ revision: 1, deltas: [{ type: 'message-upserted', index: 0, message: state(1, 'old').messages[0] }] });
+    remote.noChat();
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
 
-    expect(service.getState(key)?.revision).toBe(2);
-    expect(assistantText(service, key)).toBe('new');
+    const projection = service.activate('host', 'terminal-1', remote.value);
+    await flush();
+
+    expect(projection).toEqual({
+      type: 'no-chat',
+      terminalId: 'terminal-1',
+      reason: 'unsupported-pane',
+    });
+    expect(remote.value.startAgentChat).not.toHaveBeenCalled();
   });
 
-  test('rebases revisions when a replacement native runtime starts from zero', async () => {
-    const unavailable = state(381, 'old native lifecycle');
-    unavailable.status = 'unavailable';
-    unavailable.error = 'old lookup failure';
-    const oldRemote = fakeTransport(unavailable);
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate(
-      'host-runtime',
-      'terminal-1',
-      sessionId,
-      oldRemote.value,
-    );
+  test('loading, usable, and genuine failure remain presentation concerns', async () => {
+    const remote = fakeTransport(state('loading', 0));
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const token = openedToken(service, remote.value);
     await flush();
+    expect(agentTranscriptReadiness(service.getState(token)!)).toBe('loading');
 
-    const loading = state(0, 'replacement native lifecycle');
-    loading.status = 'loading';
-    loading.error = undefined;
-    loading.messages = [];
-    loading.turns = [];
-    const replacement = fakeTransport(loading, 2);
-    service.activate(
-      'host-runtime',
-      'terminal-1',
-      sessionId,
-      replacement.value,
-    );
-    await flush();
-    replacement.update({
+    remote.emit({
       revision: 1,
       deltas: [{ type: 'status-changed', status: 'live' }],
     });
+    expect(agentTranscriptReadiness(service.getState(token)!)).toBe('usable');
 
-    expect(replacement.value.startAgentSession).toHaveBeenCalledWith(
-      'terminal-1',
-      nativeKey,
-      undefined,
-    );
-    expect(service.getState(key)).toEqual(expect.objectContaining({
-      revision: 1,
-      status: 'live',
-      error: undefined,
-    }));
-  });
-
-  test('ignores a late close from a replaced native runtime incarnation', async () => {
-    const oldRemote = fakeTransport(state(1, 'old native lifecycle'), 1);
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate(
-      'host-runtime',
-      'terminal-1',
-      sessionId,
-      oldRemote.value,
-    );
-    await flush();
-
-    const loading = state(0, 'replacement native lifecycle');
-    loading.status = 'loading';
-    loading.messages = [];
-    loading.turns = [];
-    const replacement = fakeTransport(loading, 2);
-    service.activate(
-      'host-runtime',
-      'terminal-1',
-      sessionId,
-      replacement.value,
-    );
-    await flush();
-    const replacementLive = state(1, 'replacement native lifecycle');
-    replacement.update({
-      revision: 1,
-      deltas: [{ type: 'reset', state: replacementLive }],
-    }, replacementLive);
-    oldRemote.update({
+    remote.emit({
       revision: 2,
-      deltas: [{ type: 'status-changed', status: 'closed' }],
+      deltas: [
+        { type: 'status-changed', status: 'error', error: 'source failed' },
+      ],
     });
-
-    expect(service.getState(key)).toEqual(expect.objectContaining({
-      revision: 1,
-      status: 'live',
-    }));
-    expect(assistantText(service, key)).toBe('replacement native lifecycle');
+    expect(agentTranscriptReadiness(service.getState(token)!)).toBe('failed');
   });
 
-  test('resyncs from a full snapshot after a revision gap', async () => {
+  test('typed stale cache completion is an expected no-op', async () => {
+    const remote = fakeTransport(state('loading', 0));
+    jest
+      .mocked(remote.value.startAgentChat)
+      .mockReturnValue({ type: 'stale-binding' });
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const token = openedToken(service, remote.value);
+    await flush();
+
+    expect(service.getState(token)).toBeNull();
+  });
+
+  test('an immediate Closed callback during intentional detach cannot fail the UI', async () => {
     const remote = fakeTransport();
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const token = openedToken(service, remote.value);
     await flush();
-    remote.update({ revision: 3, deltas: [{ type: 'message-upserted', index: 0, message: state(3, 'ignored').messages[0] }] }, state(3, 'resynced'));
+    const listener = jest.fn();
+    service.subscribe(token, listener);
+    listener.mockClear();
+    remote.emitClosedDuringDetach();
 
-    expect(remote.value.agentTranscript).toHaveBeenCalledWith(nativeKey);
-    expect(service.getState(key)?.revision).toBe(3);
-    expect(assistantText(service, key)).toBe('resynced');
+    service.closeTerminal('host', 'terminal-1', remote.value);
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(service.getState(token)).toBeNull();
   });
 
-  test('keeps untouched message identities for one-message deltas', async () => {
-    const initial = state(1);
-    initial.messages.unshift({ id: 'message:0', role: 'user', parts: [{ type: 'text', id: 'part:0', text: 'prompt' }], diffs: [] });
-    initial.turns[0].userMessageId = 'message:0';
-    const remote = fakeTransport(initial);
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
-    await flush();
-    const before = service.getState(key)!;
-    remote.update({ revision: 2, deltas: [
-      { type: 'message-upserted', index: 1, message: state(2, 'changed').messages[0] },
-      { type: 'turn-upserted', index: 0, turn: initial.turns[0] },
-    ] });
-    const after = service.getState(key)!;
-
-    expect(after.transcript.messages[0]).toBe(before.transcript.messages[0]);
-    expect(after.transcript.messages[1]).not.toBe(before.transcript.messages[1]);
-    expect(after.transcript.turns[0]).not.toBe(before.transcript.turns[0]);
-  });
-
-  test('applies compact rollback truncations', async () => {
-    const initial = state(1);
-    initial.messages.push({ id: 'message:2', role: 'assistant', parts: [{ type: 'text', id: 'part:2', text: 'later' }], diffs: [] });
-    initial.turns.push({ id: 'turn:2', assistantMessageIds: ['message:2'], status: 'idle', diffs: [] });
-    const remote = fakeTransport(initial);
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
-    await flush();
-    remote.update({ revision: 2, deltas: [{ type: 'messages-truncated', length: 1 }, { type: 'turns-truncated', length: 1 }] });
-
-    expect(service.getState(key)?.transcript.messages).toHaveLength(1);
-    expect(service.getState(key)?.transcript.turns).toHaveLength(1);
-  });
-
-  test('persists the opaque native checkpoint before confirming it', async () => {
-    const cache = new MemoryAgentChatCache();
+  test('a native rebind replaces the opaque token without TS identity policy', async () => {
     const remote = fakeTransport();
-    const service = new CodexTranscriptService(cache);
-    service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const oldToken = openedToken(service, remote.value);
     await flush();
-    const blob = new Uint8Array([8, 9]).buffer;
-    remote.update({ revision: 2, deltas: [], cacheWrite: { ...cacheWrite('confirm-1'), blob } });
-    await flush();
+    remote.rebind(binding('terminal-1', 'binding-2', state('loading', 0)));
 
-    expect(remote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('confirm-1');
-    const stored = await cache.loadNative(nativeKey);
-    expect([...new Uint8Array(stored!)]).toEqual([8, 9]);
+    const projection = service.reconcile('host', 'terminal-1', remote.value);
+
+    expect(projection.type).toBe('bound');
+    if (projection.type !== 'bound') return;
+    expect(projection.binding.bindingToken).toBe('binding-2');
+    expect(service.getState(oldToken)).toBeNull();
+    expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
   });
 
-  test('does not confirm a checkpoint whose cache write failed', async () => {
-    const cache = new MemoryAgentChatCache();
-    jest.spyOn(cache, 'saveNative').mockRejectedValue(new Error('disk full'));
+  test('Codex session to normal shell reconciles to dormancy without a failure', async () => {
     const remote = fakeTransport();
-    const service = new CodexTranscriptService(cache);
-    const key = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
+    const service = new NativeTranscriptService(new MemoryAgentChatCache());
+    const token = openedToken(service, remote.value);
     await flush();
-    remote.update({ revision: 2, deltas: [], cacheWrite: cacheWrite('never-confirm', [1]) });
-    await flush();
+    const preparing = requestChatPresentation(
+      { phase: AgentChatPresentationPhase.Dormant, generation: 0 },
+      'usable',
+      1,
+    );
+    const visible = revealPreparedChat(preparing, 1);
+    expect(visible.phase).toBe(AgentChatPresentationPhase.Visible);
 
-    expect(remote.value.confirmAgentTranscriptCache).not.toHaveBeenCalled();
-    expect(service.getState(key)).toEqual(expect.objectContaining({
-      status: 'stale', error: expect.stringContaining('disk full'),
-    }));
-  });
+    remote.noChat();
+    const projection = service.reconcile('host', 'terminal-1', remote.value);
+    const reconciledPresentation =
+      projection.type === 'no-chat'
+        ? AgentChatPresentationPhase.Dormant
+        : AgentChatPresentationPhase.Failed;
 
-  test('opaque persistence ordering prevents an in-flight write from regressing a rebound checkpoint', async () => {
-    let releaseOlder!: () => void;
-    const olderGate = new Promise<void>(resolve => { releaseOlder = resolve; });
-    class DelayedCache extends MemoryAgentChatCache {
-      private chain = Promise.resolve();
-
-      override saveNative(checkpoint: Parameters<MemoryAgentChatCache['saveNative']>[0]): Promise<void> {
-        const operation = this.chain.then(async () => {
-          if (new Uint8Array(checkpoint.blob)[0] === 2) await olderGate;
-          await super.saveNative(checkpoint);
-        });
-        this.chain = settledPromise(operation);
-        return operation;
-      }
-    }
-    const cache = new DelayedCache();
-    const oldRemote = fakeTransport();
-    const oldService = new CodexTranscriptService(cache);
-    oldService.activate('host-runtime', 'terminal-1', sessionId, oldRemote.value);
-    await flush();
-    oldRemote.update({ revision: 2, deltas: [], cacheWrite: cacheWrite('old', [2]) });
-    await flush();
-    oldService.closeTerminal('host-runtime', 'terminal-1');
-
-    const newRemote = fakeTransport(state(3));
-    const newService = new CodexTranscriptService(cache);
-    newService.activate('host-runtime-2', 'terminal-2', sessionId, newRemote.value);
-    await flush();
-    newRemote.update({ revision: 4, deltas: [], cacheWrite: cacheWrite('new', [4]) });
-    await flush();
-    releaseOlder();
-    await flush();
-
-    const stored = await cache.loadNative(nativeKey);
-    await flush();
-    expect([...new Uint8Array(stored!)]).toEqual([4]);
-    // Rust owns token validity. TS confirms only after the older blob is
-    // durable; a released native session rejects the obsolete token.
-    expect(oldRemote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('old');
-    expect(newRemote.value.confirmAgentTranscriptCache).toHaveBeenCalledWith('new');
-  });
-
-  test('two terminals share one logical session and close independently', async () => {
-    const remote = fakeTransport();
-    const service = new CodexTranscriptService(new MemoryAgentChatCache());
-    const first = service.activate('host-runtime', 'terminal-1', sessionId, remote.value);
-    const second = service.activate('host-runtime', 'terminal-2', sessionId, remote.value);
-    await flush();
-
-    expect(first).toBe(second);
-    service.closeTerminal('host-runtime', 'terminal-1');
-    expect(remote.value.closeAgentTerminal).toHaveBeenCalledWith('terminal-1');
-    expect(service.getState(first)).not.toBeNull();
-    service.closeTerminal('host-runtime', 'terminal-2');
-    expect(remote.value.closeAgentTerminal).toHaveBeenCalledWith('terminal-2');
-    expect(service.getState(first)).toBeNull();
+    expect(projection.type).toBe('no-chat');
+    expect(service.getState(token)).toBeNull();
+    expect(reconciledPresentation).toBe(AgentChatPresentationPhase.Dormant);
   });
 });
