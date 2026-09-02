@@ -23,7 +23,7 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip/releases';
+export const WHIP_RELEASES_URL = 'https://github.com/KaminariOS/whip';
 export const WHIP_REPOSITORY_URL = 'https://github.com/KaminariOS/whip';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
