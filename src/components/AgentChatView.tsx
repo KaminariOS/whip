@@ -969,17 +969,27 @@ export function AgentChatView({
   const alignLoadedInitialViewportToEnd = () => {
     const readiness = initialViewportRef.current;
     const geometry = scrollGeometryRef.current;
+    const maximumOffset = Math.max(
+      0,
+      geometry.contentHeight - geometry.viewportHeight,
+    );
     if (
       readiness.ready ||
       !readiness.itemsLoaded ||
       !readiness.contentSizeKnown ||
       geometry.viewportHeight <= 0 ||
-      geometry.contentHeight - geometry.viewportHeight <=
-        CHAT_INITIAL_END_THRESHOLD ||
+      maximumOffset <= CHAT_INITIAL_END_THRESHOLD ||
       readiness.atEnd
     )
       return;
-    scrollToLatest(false);
+    scrollInteractionRef.current = {
+      kind: ChatScrollInteractionKind.Idle,
+      lastOffset: maximumOffset,
+    };
+    updateScrollGeometry({ ...geometry, offset: maximumOffset });
+    readiness.atEnd = true;
+    list.current?.scrollToOffset({ offset: maximumOffset, animated: false });
+    scheduleInitialViewportReady('initial-end-alignment');
   };
 
   useEffect(() => {

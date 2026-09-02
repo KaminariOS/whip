@@ -604,21 +604,22 @@ describe('AgentChatView initial viewport readiness', () => {
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('aligns a loaded scrollable bottom-first viewport without waiting for transcript input', () => {
+  test('aligns a loaded single tall turn to the measured end without waiting for a native scroll event', () => {
     const onReady = jest.fn();
     renderChat(chatState([TURN]), onReady);
+    reportViewableTurns([TURN]);
     layoutAndMeasure(1_000);
 
     act(() => {
       flatList(renderer).props.onLoad({ elapsedTimeInMs: 10 });
     });
 
-    expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
-    expect(onReady).not.toHaveBeenCalled();
-
-    reportViewableTurns([TURN]);
-    reportEndReached();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({
+      animated: false,
+      offset: 600,
+    });
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
