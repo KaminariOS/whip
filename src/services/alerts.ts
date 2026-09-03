@@ -5,6 +5,7 @@ import { Platform, Vibration } from 'react-native';
 import type { AgentInfo } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
+import type { AgentAlertLevel } from './devicePreferences';
 import { armPersistentAgentAlert, dismissPersistentAgentAlert } from './backgroundMonitoring';
 import i18n from '../i18n';
 import {
@@ -14,6 +15,8 @@ import {
 
 const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
 const BRIEF_CHANNEL_ID = 'agent-state-brief-v1';
+const REGULAR_CHANNEL_ID = 'agent-state-regular-v1';
+const ALERT_LEVEL_DATA_KEY = 'agentAlertLevel';
 const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000,
   300, 100, 300, 100, 300, 100, 300, 2000,
@@ -38,16 +41,21 @@ let alertDismissalGeneration = 0;
 let persistentAgentNotificationId: string | null = null;
 let speakingAgentAlertTargets: AgentAlertTargets | null = null;
 
-export type AgentAlertDuration = 'brief' | 'persistent';
+export type AgentAlertDelivery = AgentAlertLevel | 'brief';
 
 Notifications.setNotificationHandler({
-  handleNotification: () => Promise.resolve({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    priority: Notifications.AndroidNotificationPriority.MAX,
-  }),
+  handleNotification: notification => {
+    const regular = notification.request.content.data?.[ALERT_LEVEL_DATA_KEY] === 'regular';
+    return Promise.resolve({
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      priority: regular
+        ? Notifications.AndroidNotificationPriority.DEFAULT
+        : Notifications.AndroidNotificationPriority.MAX,
+    });
+  },
 });
 
 export async function prepareAlerts(): Promise<void> {
@@ -67,6 +75,10 @@ export async function prepareAlerts(): Promise<void> {
         enableLights: true,
         enableVibrate: true,
         vibrationPattern: BRIEF_VIBRATION_PATTERN,
+      });
+      await Notifications.setNotificationChannelAsync(REGULAR_CHANNEL_ID, {
+        name: i18n.t('alerts.regularChannelName'),
+        importance: Notifications.AndroidImportance.DEFAULT,
       });
     } catch (error) {
       recordNotificationFailure('error', 'notification-setup-failed', error, {
@@ -90,7 +102,7 @@ export async function alertAgent(
   speak: boolean,
   target: Pick<AgentNotificationTarget, 'hostId' | 'paneId'>,
   tabName?: string,
-  duration: AgentAlertDuration = 'persistent',
+  delivery: AgentAlertDelivery = 'persistent',
   persistentAlertTimeoutMs: number = DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS,
 ): Promise<void> {
   const dismissalGeneration = alertDismissalGeneration;
@@ -122,20 +134,28 @@ export async function alertAgent(
       }
     }
     if (wasDismissed()) return;
-    if (Platform.OS !== 'android') Vibration.vibrate();
-    const persistent = duration === 'persistent';
-    const channelId = persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
+    const regular = delivery === 'regular';
+    if (Platform.OS !== 'android' && !regular) Vibration.vibrate();
+    const persistent = delivery === 'persistent';
+    const channelId = regular
+      ? REGULAR_CHANNEL_ID
+      : persistent ? PERSISTENT_CHANNEL_ID : BRIEF_CHANNEL_ID;
+    const content: Notifications.NotificationContentInput = {
+      title,
+      body,
+      priority: regular
+        ? Notifications.AndroidNotificationPriority.DEFAULT
+        : Notifications.AndroidNotificationPriority.MAX,
+      data: { ...target, [ALERT_LEVEL_DATA_KEY]: delivery },
+    };
+    if (!regular) {
+      content.sound = 'default';
+      content.vibrate = persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN;
+    }
     let notificationIdentifier: string;
     try {
       notificationIdentifier = await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          sound: 'default',
-          vibrate: persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          data: target,
-        },
+        content,
         trigger: { channelId },
       });
     } catch (error) {
